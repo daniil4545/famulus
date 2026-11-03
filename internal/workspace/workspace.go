@@ -8,6 +8,7 @@ import (
 	"encoding/base64"
 	"errors"
 	"fmt"
+	"io/fs"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -147,6 +148,9 @@ func (w *Workspace) ReviewTree(ctx context.Context, repo, base string, number in
 	if _, err := w.gitAuth(ctx, repo, clone, "worktree", "add", "--detach", tree, sha); err != nil {
 		return "", "", err
 	}
+	if err := disarm(tree); err != nil {
+		return "", "", err
+	}
 	diff, err := w.gitAuth(ctx, repo, clone, "diff", "origin/"+base+"..."+sha)
 	if err != nil {
 		return "", "", err
@@ -155,6 +159,41 @@ func (w *Workspace) ReviewTree(ctx context.Context, repo, base string, number in
 		diff = diff[:maxDiff] + "\n\n[diff truncated at 200 KB; read the rest in the worktree]"
 	}
 	return tree, diff, nil
+}
+
+// agentFiles are read by the review CLI itself, not through its tools: a PR could change
+// the agent's settings, hooks or context with them.
+var agentFiles = map[string]bool{".claude": true, "CLAUDE.md": true, "CLAUDE.local.md": true, ".mcp.json": true}
+
+// disarm removes agent files and symlinks from a review tree, so the PR under review can
+// neither steer the agent nor point it outside the tree. The diff still shows them.
+func disarm(tree string) error {
+	root, err := os.OpenRoot(tree)
+	if err != nil {
+		return fmt.Errorf("disarm review tree: %w", err)
+	}
+	defer func() { _ = root.Close() }() // read-only handle, nothing to flush
+	err = fs.WalkDir(root.FS(), ".", func(p string, d fs.DirEntry, err error) error {
+		switch {
+		case err != nil:
+			return err
+		case p == "." || p == ".git":
+			// a worktree's .git is a file; SkipDir on a file would skip the rest of the root
+			return nil
+		case agentFiles[d.Name()] || d.Type()&fs.ModeSymlink != 0:
+			if err := root.RemoveAll(p); err != nil {
+				return fmt.Errorf("remove %s: %w", p, err)
+			}
+			if d.IsDir() {
+				return fs.SkipDir
+			}
+		}
+		return nil
+	})
+	if err != nil {
+		return fmt.Errorf("disarm review tree: %w", err)
+	}
+	return nil
 }
 
 // RemoveReview drops the review worktree with whatever the agent left in it.

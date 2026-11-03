@@ -11,8 +11,10 @@ import (
 	"os"
 	"os/exec"
 	"regexp"
+	"slices"
 	"strings"
 	"time"
+	"unicode"
 
 	"github.com/daniil4545/famulus/internal/config"
 )
@@ -23,6 +25,9 @@ type Request struct {
 	Session string
 	Model   string
 	Effort  string
+	// ReadOnly runs the agent without shell, writes, network and MCP, confined to Dir:
+	// the review agent reads code written by anyone.
+	ReadOnly bool
 }
 
 type Result struct {
@@ -36,6 +41,9 @@ type CLI struct {
 }
 
 func (c CLI) Run(ctx context.Context, name string, req Request) (Result, error) {
+	if req.ReadOnly && name != config.Claude {
+		return Result{}, fmt.Errorf("%s: read-only runs exist only for claude", name)
+	}
 	switch name {
 	case config.Claude:
 		return c.claude(ctx, req)
@@ -129,6 +137,36 @@ func agentEnv(env []string) []string {
 		}
 	}
 	return kept
+}
+
+// secretEnv names the variables whose values must never leave the runner in agent text.
+var secretEnv = []string{"CLAUDE_CODE_OAUTH_TOKEN", "FAMULUS_APP_KEY_B64"}
+
+// Leaks reports whether text carries the value of a runner secret, also spaced out or
+// reversed. The sandbox is the defence; this only stops the plainest copy.
+func Leaks(text string) bool {
+	plain := alnum(text)
+	for _, name := range secretEnv {
+		v := alnum(os.Getenv(name))
+		if len(v) < 8 {
+			continue
+		}
+		r := []rune(v)
+		slices.Reverse(r)
+		if strings.Contains(plain, v) || strings.Contains(plain, string(r)) {
+			return true
+		}
+	}
+	return false
+}
+
+func alnum(s string) string {
+	return strings.Map(func(r rune) rune {
+		if unicode.IsLetter(r) || unicode.IsDigit(r) {
+			return r
+		}
+		return -1
+	}, s)
 }
 
 // tail keeps the end of an error text, where CLIs print the cause.

@@ -129,7 +129,19 @@ func TestReviewTree(t *testing.T) {
 	if err := os.WriteFile(filepath.Join(seed, "a.go"), []byte("package a\n"), 0o644); err != nil {
 		t.Fatal(err)
 	}
-	run(t, seed, "add", "a.go")
+	// spec: docs/spec.md.S30: files the agent CLI reads itself and symlinks never reach the agent
+	for _, f := range []string{".claude/settings.json", "sub/CLAUDE.md", ".mcp.json"} {
+		if err := os.MkdirAll(filepath.Dir(filepath.Join(seed, f)), 0o755); err != nil {
+			t.Fatal(err)
+		}
+		if err := os.WriteFile(filepath.Join(seed, f), []byte("{}"), 0o644); err != nil {
+			t.Fatal(err)
+		}
+	}
+	if err := os.Symlink("/etc", filepath.Join(seed, "out")); err != nil {
+		t.Fatal(err)
+	}
+	run(t, seed, "add", ".")
 	run(t, seed, "-c", "user.name=t", "-c", "user.email=t@t", "commit", "-q", "-m", "add a")
 	run(t, seed, "push", "-q", "origin", "HEAD:refs/pull/7/head")
 	sha := run(t, seed, "rev-parse", "HEAD")
@@ -141,6 +153,11 @@ func TestReviewTree(t *testing.T) {
 	}
 	if run(t, dir, "rev-parse", "HEAD") != sha || !strings.Contains(diff, "+package a") {
 		t.Fatalf("head or diff wrong: %q", diff)
+	}
+	for _, f := range []string{".claude", "sub/CLAUDE.md", ".mcp.json", "out"} {
+		if _, err := os.Lstat(filepath.Join(dir, f)); !os.IsNotExist(err) || !strings.Contains(diff, f) {
+			t.Fatalf("%s: left in the tree (%v) or missing from the diff", f, err)
+		}
 	}
 	if err := os.WriteFile(filepath.Join(dir, "junk"), []byte("x"), 0o644); err != nil {
 		t.Fatal(err)

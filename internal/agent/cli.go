@@ -17,9 +17,13 @@ import (
 )
 
 // claude: `claude -p --output-format json` prints one JSON object with the result and the
-// session id; the container is the sandbox, so permission prompts are off.
+// session id; the container is the sandbox, so permission prompts are off. A read-only run
+// gets only the file reading tools inside its directory and ignores settings and MCP servers.
 func (c CLI) claude(ctx context.Context, req Request) (Result, error) {
 	args := []string{"-p", "--output-format", "json", "--dangerously-skip-permissions"}
+	if req.ReadOnly {
+		args = []string{"-p", "--output-format", "json", "--restricted", "--tools", "Read,Grep,Glob", "--strict-mcp-config"}
+	}
 	if req.Model != "" {
 		args = append(args, "--model", req.Model)
 	}
