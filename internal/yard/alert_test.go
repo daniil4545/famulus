@@ -227,3 +227,19 @@ func TestAlertOfflineAndFiveMinuteThreshold(t *testing.T) {
 		t.Fatalf("outage lost: %+v", a)
 	}
 }
+
+func TestAlertCauseNamesRepoAndStatus(t *testing.T) {
+	cases := []struct {
+		err  error
+		want string
+	}{
+		{&repoError{repo: "o/r", err: fmt.Errorf("list issues: %w", github.ErrNotFound)}, "o/r: GitHub API answered 404 (repository, issue or App installation not found)"},
+		{&github.HTTPError{Status: 403, Message: "token ghs_secret"}, "GitHub API answered 403"},
+		{errors.New("agent printed sk-secret"), "operation failed (details in runner log)"},
+	}
+	for _, c := range cases {
+		if got := alertCause(c.err); got != c.want {
+			t.Errorf("alertCause(%v) = %q, want %q", c.err, got, c.want)
+		}
+	}
+}

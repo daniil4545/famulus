@@ -95,10 +95,12 @@ func (y *Yard) Pass(ctx context.Context) {
 			break
 		}
 		result.repos++
+		result.repo = repo.Name
 		if err := y.passRepo(ctx, repo, &result); err != nil {
 			result.failed(err)
 			y.Log.Error("pass failed", "repo", repo.Name, "err", err)
 		}
+		result.repo = ""
 	}
 	if err := ctx.Err(); err != nil && result.errors == 0 {
 		result.failed(err)
@@ -113,26 +115,39 @@ func (y *Yard) Pass(ctx context.Context) {
 			y.Log.Error("alert failed", "err", err)
 		}
 	}
-	y.Log.Info("pass done", "repos", result.repos, "tasks", result.tasks, "reviews", result.reviews, "errors", result.errors, "duration", y.now().Sub(start))
+	y.Log.Info("pass done", "repos", result.repos, "tasks", result.tasks, "prs", result.prs, "errors", result.errors, "duration", y.now().Sub(start))
 	if y.Passed != nil {
 		y.Passed(y.now(), result.errors, result.last)
 	}
 }
 
 type passResult struct {
-	repos, tasks, reviews, errors int
-	last                          error
+	repos, tasks, prs, errors int
+	repo                      string
+	last                      error
 }
 
 func (p *passResult) failed(err error) {
 	p.errors++
+	if p.repo != "" {
+		err = &repoError{repo: p.repo, err: err}
+	}
 	p.last = err
 }
+
+// repoError names the repository of a failure for the public alert, whose text holds no raw cause.
+type repoError struct {
+	repo string
+	err  error
+}
+
+func (e *repoError) Error() string { return e.repo + ": " + e.err.Error() }
+func (e *repoError) Unwrap() error { return e.err }
 
 func (y *Yard) passRepo(ctx context.Context, repo config.Repo, result *passResult) error {
 	for _, t := range y.State.Tasks {
 		if t.Repo == repo.Name && t.Status == state.Review && !y.paused(t.Agent) {
-			result.reviews++
+			result.prs++
 			if err := y.followPR(ctx, repo, t); err != nil {
 				result.failed(err)
 				y.Log.Error("follow pr failed", "task", state.Key(t.Repo, t.Issue), "pr", t.PR, "err", err)

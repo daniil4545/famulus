@@ -20,6 +20,14 @@ import (
 // ErrNotFound marks a 404 answer.
 var ErrNotFound = errors.New("not found")
 
+// HTTPError is a GitHub answer with an error status other than 404.
+type HTTPError struct {
+	Status  int
+	Message string
+}
+
+func (e *HTTPError) Error() string { return fmt.Sprintf("http %d: %s", e.Status, e.Message) }
+
 type Client struct {
 	baseURL string
 	http    *http.Client
@@ -331,7 +339,7 @@ func (c *Client) call(ctx context.Context, auth, method, path string, body, out 
 			Message string `json:"message"`
 		}
 		_ = json.Unmarshal(raw, &msg) // the status alone is enough when the body is not JSON
-		return fmt.Errorf("http %d: %s", resp.StatusCode, msg.Message)
+		return &HTTPError{Status: resp.StatusCode, Message: msg.Message}
 	}
 	if out == nil || len(raw) == 0 {
 		return nil

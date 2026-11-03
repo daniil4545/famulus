@@ -140,9 +140,21 @@ func (y *Yard) updateAlert(ctx context.Context, i github.Issue, at time.Time) er
 // CLI output and remote error messages may contain credentials. Only known categories
 // cross the public issue boundary; the full cause stays in the runner log.
 func alertCause(err error) string {
+	if where, ok := errors.AsType[*repoError](err); ok {
+		return where.repo + ": " + alertKind(err)
+	}
+	return alertKind(err)
+}
+
+func alertKind(err error) string {
 	var dns *net.DNSError
 	var network net.Error
+	var status *github.HTTPError
 	switch {
+	case errors.Is(err, github.ErrNotFound):
+		return "GitHub API answered 404 (repository, issue or App installation not found)"
+	case errors.As(err, &status):
+		return fmt.Sprintf("GitHub API answered %d", status.Status)
 	case errors.Is(err, context.DeadlineExceeded):
 		return "operation timed out"
 	case errors.Is(err, context.Canceled):
