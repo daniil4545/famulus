@@ -5,6 +5,7 @@ package config
 import (
 	"errors"
 	"fmt"
+	"path"
 	"slices"
 	"time"
 
@@ -37,13 +38,18 @@ type Config struct {
 	Models    map[string]string `toml:"models"`
 	// Effort is the reasoning effort per agent; only the claude CLI takes it as a flag.
 	Effort map[string]string `toml:"effort"`
-	Repos  []Repo            `toml:"repos"`
+	// GateFiles are the paths of the CI gate itself; a PR changing one needs the owner's label
+	// gate-change, since a PR runs its own workflow and could weaken it.
+	GateFiles []string `toml:"gate_files"`
+	Repos     []Repo   `toml:"repos"`
 }
 
 type Repo struct {
 	Name  string `toml:"name"`
 	Base  string `toml:"base"`
 	Agent string `toml:"agent"`
+	// Review makes the runner guard the owner's pull requests into Base.
+	Review bool `toml:"review"`
 }
 
 func Load(path string) (Config, error) {
@@ -56,6 +62,7 @@ func Load(path string) (Config, error) {
 		WorkDir:    "/work",
 		Panel:      ":8080",
 		Agent:      OpenCode,
+		GateFiles:  []string{".github/workflows/**", ".github/actions/**", ".golangci.yml", ".golangci.yaml", ".golangci.toml", ".swiftlint.yml", ".gitleaks.toml", "ruff.toml", "Makefile", "*.mk"},
 	}
 	if _, err := toml.DecodeFile(path, &cfg); err != nil {
 		return Config{}, fmt.Errorf("read %s: %w", path, err)
@@ -69,6 +76,9 @@ func (c Config) check() error {
 	}
 	if len(c.Repos) == 0 {
 		return errors.New("no repos")
+	}
+	if err := checkPatterns(c.GateFiles); err != nil {
+		return err
 	}
 	if c.DailyLimit < 0 {
 		return errors.New("daily_limit is negative")
@@ -103,4 +113,13 @@ func checkAgent(name string) error {
 		return nil
 	}
 	return fmt.Errorf("unknown agent %q: want claude, codex or opencode", name)
+}
+
+func checkPatterns(patterns []string) error {
+	for _, p := range patterns {
+		if _, err := path.Match(p, ""); err != nil {
+			return fmt.Errorf("gate_files %q: %w", p, err)
+		}
+	}
+	return nil
 }

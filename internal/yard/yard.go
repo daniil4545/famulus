@@ -18,7 +18,9 @@ import (
 	"github.com/daniil4545/famulus/internal/state"
 )
 
+// GitHub is what the runner asks of GitHub: issues and its own PRs, plus guarding the owner's PRs.
 type GitHub interface {
+	Guard
 	OpenIssues(ctx context.Context, repo, label string) ([]github.Issue, error)
 	AddLabels(ctx context.Context, repo string, number int, labels ...string) error
 	RemoveLabel(ctx context.Context, repo string, number int, label string) error
@@ -28,6 +30,16 @@ type GitHub interface {
 	PR(ctx context.Context, repo string, number int) (github.PullRequest, error)
 	CreateIssue(ctx context.Context, repo, title, body string, labels []string) (github.Issue, error)
 	CloseIssue(ctx context.Context, repo string, number int) error
+}
+
+// Guard is the part of GitHub the review of the owner's pull requests needs.
+type Guard interface {
+	OpenPRs(ctx context.Context, repo, base string) ([]github.PullRequest, error)
+	CISummary(ctx context.Context, repo, ref, skip string) (github.CI, error)
+	PRFiles(ctx context.Context, repo string, number int) ([]github.PRFile, error)
+	Reviews(ctx context.Context, repo string, number int) ([]github.Review, error)
+	CreateReview(ctx context.Context, repo string, number int, sha, event, body string, comments []github.ReviewComment) error
+	UpsertCheck(ctx context.Context, repo, sha string, check github.Check) error
 }
 
 type Workspace interface {
@@ -50,6 +62,8 @@ type Yard struct {
 	Agents Runner
 	State  *state.Store
 	Log    *slog.Logger
+	// Bot is the App's login, to know its own reviews.
+	Bot string
 	// Clock replaces time.Now in tests.
 	Clock func() time.Time
 	// Passed, when set, hears the end of every pass.
@@ -95,6 +109,12 @@ func (y *Yard) Pass(ctx context.Context) {
 		}
 		result.repos++
 		result.repo = repo.Name
+		if repo.Review {
+			if err := y.reviewRepo(ctx, repo, &result); err != nil {
+				result.failed(err)
+				y.Log.Error("review pass failed", "repo", repo.Name, "err", err)
+			}
+		}
 		if err := y.passRepo(ctx, repo, &result); err != nil {
 			result.failed(err)
 			y.Log.Error("pass failed", "repo", repo.Name, "err", err)

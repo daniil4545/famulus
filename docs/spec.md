@@ -81,6 +81,25 @@ GitHub was unreachable, the pending outage is opened and closed on recovery. Pen
 before issue creation are held in memory. Alerts publish safe error categories; arbitrary
 CLI and remote error text stays in the local log.
 
+A repository with `review = true` also gets a review pass before its tasks. Only the owner's
+non-draft PRs are reviewed, once per head SHA; the verdict is stored in state and found
+again among the bot's reviews after a restart. Code decides first, on the check `famulus`:
+
+| Condition | Check | Review |
+|---|---|---|
+| CI of the head still running | `in_progress`, "Waiting for CI" | none |
+| CI of the head failed | `in_progress`, failed jobs listed | none |
+| CI of the base branch failed | `in_progress`, "<base> is red" | none |
+| files from `gate_files` changed, no `gate-change` label | `completed` failure | `REQUEST_CHANGES` |
+| otherwise | `queued`, agent review comes next | none |
+
+`gate_files` (default: workflows, linter and gitleaks configs, `Makefile`, `*.mk`) protects
+CI from being weakened inside the PR it checks; a rename counts by both names. famulus
+checks that the label is present, not who set it: labels need triage access, which only
+the owner holds.
+The verdict is per SHA, so a label added after `REQUEST_CHANGES` takes effect on the next
+push. An unchanged check text is not sent again.
+
 The panel shows the last pass, last successful pass (UTC), consecutive failures and last
 error. `/healthz` returns 200 only when a successful pass finished less than
 five minutes ago; startup and stale health return 503. Docker probes it with curl. A long
@@ -189,6 +208,9 @@ What the runner does not do on any input:
 | S19 | startup, or last successful pass at least five minutes ago | `/healthz` returns 503; fresh success returns 200; panel shows health |
 | S20 | error contains credentials or arbitrary agent output | public alert contains only a safe cause category |
 | S21 | another App has a `famulus` check on the same SHA | create our own check; later updates address only our App's check (R6) |
+| S22 | owner's PR, CI pending or failed, or base red | check `famulus` waits with the reason; no review |
+| S23 | PR changes a gate file without the `gate-change` label | `REQUEST_CHANGES` and failed check, once per SHA, also after restart |
+| S24 | stranger's or draft PR | not reviewed |
 
 ## 8. Decisions
 

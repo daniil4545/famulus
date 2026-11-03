@@ -12,6 +12,8 @@ limit_pause = "1h" # rest after a used-up plan when the provider names no time
 daily_limit = 5    # new issues started per UTC day; 0 turns the cap off
 work_dir = "/work" # clones, worktrees and state.json, a Docker volume
 alert_repo = "daniil4545/famulus" # failure issues; empty or omitted disables alerts
+# Files whose change needs the owner's gate-change label. Default shown.
+# gate_files = [".github/workflows/**", ".github/actions/**", ".golangci.yml", ".golangci.yaml", ".golangci.toml", ".swiftlint.yml", ".gitleaks.toml", "ruff.toml", "Makefile", "*.mk"]
 
 # Default agent: opencode, claude or codex. An issue label agent:<name> overrides it.
 agent = "opencode"
@@ -30,6 +32,7 @@ claude = "medium"
 [[repos]]
 name = "daniil4545/admitd-lab"
 base = "main"
+# review = true  # review the owner's PRs: CI result, red base, gate files (see docs/spec.md)
 
 # [[repos]]
 # name = "daniil4545/tix"
