@@ -76,14 +76,17 @@ func (y *Yard) reviewPR(ctx context.Context, repo config.Repo, pr github.PullReq
 	if gate := gateFiles(files, y.Config.GateFiles); len(gate) > 0 && !hasLabel(pr.Labels, gateLabel) {
 		body := fmt.Sprintf("This PR changes files of the CI gate: %s. A PR runs its own workflow, so such a change needs the owner's label `%s`.",
 			strings.Join(gate, ", "), gateLabel)
-		return y.verdict(ctx, repo, pr, "REQUEST_CHANGES", body, "Gate files changed without the label")
+		return y.verdict(ctx, repo, pr, "REQUEST_CHANGES", body, "Gate files changed without the label", nil)
 	}
-	return y.setCheck(ctx, repo, pr, github.Check{Status: "queued", Title: reviewNext, Summary: "CI and " + repo.Base + " are green; gate files untouched or labeled."})
+	if err := y.setCheck(ctx, repo, pr, github.Check{Status: "queued", Title: reviewNext, Summary: "CI and " + repo.Base + " are green; gate files untouched or labeled."}); err != nil {
+		return err
+	}
+	return y.agentReview(ctx, repo, pr, files)
 }
 
 // verdict publishes one review on the head SHA once: a review the bot already left on that
 // commit (a restart after the post) is taken as given.
-func (y *Yard) verdict(ctx context.Context, repo config.Repo, pr github.PullRequest, event, body, title string) error {
+func (y *Yard) verdict(ctx context.Context, repo config.Repo, pr github.PullRequest, event, body, title string, comments []github.ReviewComment) error {
 	sha := pr.Head.SHA
 	reviews, err := y.GitHub.Reviews(ctx, repo.Name, pr.Number)
 	if err != nil {
@@ -91,19 +94,18 @@ func (y *Yard) verdict(ctx context.Context, repo config.Repo, pr github.PullRequ
 	}
 	given := slices.ContainsFunc(reviews, func(r github.Review) bool { return r.User.Login == y.Bot && r.CommitID == sha })
 	if !given {
-		if err := y.GitHub.CreateReview(ctx, repo.Name, pr.Number, sha, event, body, nil); err != nil {
+		if err := y.GitHub.CreateReview(ctx, repo.Name, pr.Number, sha, event, body, comments); err != nil {
 			return fmt.Errorf("publish review: %w", err)
 		}
 	}
-	conclusion := "success"
-	if event == "REQUEST_CHANGES" {
-		conclusion = "failure"
+	conclusion := "failure"
+	if event == "APPROVE" {
+		conclusion = "success"
 	}
 	if err := y.setCheck(ctx, repo, pr, github.Check{Status: "completed", Conclusion: conclusion, Title: title, Summary: body}); err != nil {
 		return err
 	}
-	rec := y.State.Reviews[state.Key(repo.Name, pr.Number)]
-	rec.Verdict = event
+	y.recordVerdict(repo, pr, event)
 	if err := y.State.Save(); err != nil {
 		return fmt.Errorf("save state: %w", err)
 	}
@@ -162,4 +164,14 @@ func gateFile(name string, patterns []string) bool {
 
 func hasLabel(labels []github.Label, name string) bool {
 	return slices.ContainsFunc(labels, func(l github.Label) bool { return l.Name == name })
+}
+
+func (y *Yard) recordVerdict(repo config.Repo, pr github.PullRequest, verdict string) {
+	key := state.Key(repo.Name, pr.Number)
+	rec := y.State.Reviews[key]
+	if rec == nil || rec.SHA != pr.Head.SHA {
+		rec = &state.PRReview{SHA: pr.Head.SHA}
+		y.State.Reviews[key] = rec
+	}
+	rec.Verdict, rec.At = verdict, y.now().UTC()
 }

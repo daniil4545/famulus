@@ -42,6 +42,7 @@ type PRFile struct {
 	Status    string `json:"status"`
 	Additions int    `json:"additions"`
 	Deletions int    `json:"deletions"`
+	Patch     string `json:"patch"` // hunks; GitHub leaves it out for binary and huge files
 }
 
 func (c *Client) PRFiles(ctx context.Context, repo string, number int) ([]PRFile, error) {

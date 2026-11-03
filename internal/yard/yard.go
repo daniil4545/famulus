@@ -35,6 +35,7 @@ type GitHub interface {
 // Guard is the part of GitHub the review of the owner's pull requests needs.
 type Guard interface {
 	OpenPRs(ctx context.Context, repo, base string) ([]github.PullRequest, error)
+	Issue(ctx context.Context, repo string, number int) (github.Issue, error)
 	CISummary(ctx context.Context, repo, ref, skip string) (github.CI, error)
 	PRFiles(ctx context.Context, repo string, number int) ([]github.PRFile, error)
 	Reviews(ctx context.Context, repo string, number int) ([]github.Review, error)
@@ -49,6 +50,8 @@ type Workspace interface {
 	Ahead(ctx context.Context, dir, base string) (int, error)
 	Push(ctx context.Context, repo, dir, branch string) error
 	Remove(ctx context.Context, repo, branch string, issue int) error
+	ReviewTree(ctx context.Context, repo, base string, number int, sha string) (string, string, error)
+	RemoveReview(ctx context.Context, repo string, number int) error
 }
 
 type Runner interface {
@@ -69,6 +72,9 @@ type Yard struct {
 	// Passed, when set, hears the end of every pass.
 	Passed func(time.Time, int, error)
 	alert  alert
+	// answers holds a review answer whose publish failed for a passing reason (403, 429,
+	// 5xx), so the next pass publishes it without a new model run
+	answers map[string]answer
 }
 
 const leftoverMessage = "chore: commit changes the agent left uncommitted"
