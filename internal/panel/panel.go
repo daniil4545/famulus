@@ -54,25 +54,30 @@ func (l *Log) Lines() []string {
 
 // Health is what the loop reports about itself.
 type Health struct {
-	mu       sync.Mutex
-	started  time.Time
-	lastPass time.Time
+	mu        sync.Mutex
+	started   time.Time
+	lastPass  time.Time
+	lastGood  time.Time
+	failures  int
+	lastError string
 }
 
 func NewHealth(now time.Time) *Health {
 	return &Health{started: now}
 }
 
-func (h *Health) Passed(at time.Time) {
-	h.mu.Lock()
-	h.lastPass = at
-	h.mu.Unlock()
-}
-
-func (h *Health) times() (started, lastPass time.Time) {
+func (h *Health) Passed(at time.Time, errs int, last error) {
 	h.mu.Lock()
 	defer h.mu.Unlock()
-	return h.started, h.lastPass
+	h.lastPass = at
+	if errs == 0 {
+		h.lastGood, h.failures, h.lastError = at, 0, ""
+	} else {
+		h.failures++
+		if last != nil {
+			h.lastError = last.Error()
+		}
+	}
 }
 
 type Panel struct {
@@ -96,34 +101,48 @@ type count struct {
 }
 
 type page struct {
-	Bot, Uptime, LastPass string
-	Counts                []count
-	Paused                map[string]string
-	Rows                  []row
-	Log                   []string
+	Bot, Uptime, LastPass, LastGood, LastError string
+	Failures                                   int
+	Counts                                     []count
+	Paused                                     map[string]string
+	Rows                                       []row
+	Log                                        []string
 }
 
 // statusOrder is the board from left to right: running, waiting, needs the owner, review, done.
 var statusOrder = []state.Status{state.Working, state.Paused, state.Blocked, state.Failed, state.Review, state.Done}
 
-func (p *Panel) ServeHTTP(w http.ResponseWriter, _ *http.Request) {
+func (p *Panel) ServeHTTP(w http.ResponseWriter, r *http.Request) {
+	p.Health.mu.Lock()
+	started, lastPass, lastGood := p.Health.started, p.Health.lastPass, p.Health.lastGood
+	failures, lastError := p.Health.failures, p.Health.lastError
+	p.Health.mu.Unlock()
+	now := p.Now()
+	if r.URL.Path == "/healthz" {
+		serveHealth(w, lastGood, now)
+		return
+	}
 	store, err := state.Load(p.StatePath)
 	if err != nil {
 		p.Logger.Warn("panel: read state", "err", err)
 		http.Error(w, "state is unreadable, see the runner log", http.StatusInternalServerError)
 		return
 	}
-	now := p.Now()
-	started, lastPass := p.Health.times()
 	pg := page{
-		Bot:      p.Bot,
-		Uptime:   now.Sub(started).Round(time.Minute).String(),
-		LastPass: "not yet",
-		Paused:   map[string]string{},
-		Log:      p.Log.Lines(),
+		Bot:       p.Bot,
+		Uptime:    now.Sub(started).Round(time.Minute).String(),
+		LastPass:  "not yet",
+		LastGood:  "not yet",
+		Failures:  failures,
+		LastError: lastError,
+		Paused:    map[string]string{},
+		Log:       p.Log.Lines(),
 	}
 	if !lastPass.IsZero() {
 		pg.LastPass = now.Sub(lastPass).Round(time.Second).String() + " ago"
+	}
+	if !lastGood.IsZero() {
+		pg.LastGood = lastGood.UTC().Format(time.RFC3339)
 	}
 	for name, until := range store.Paused {
 		if now.Before(until) {
@@ -161,6 +180,14 @@ func (p *Panel) ServeHTTP(w http.ResponseWriter, _ *http.Request) {
 	}
 }
 
+func serveHealth(w http.ResponseWriter, lastGood, now time.Time) {
+	if lastGood.IsZero() || now.Sub(lastGood) >= 5*time.Minute {
+		http.Error(w, "no successful pass within 5 minutes", http.StatusServiceUnavailable)
+		return
+	}
+	w.WriteHeader(http.StatusOK)
+}
+
 func age(d time.Duration) string {
 	switch {
 	case d < time.Minute:
@@ -188,6 +215,8 @@ pre{font:12px/1.4 ui-monospace,monospace;white-space:pre-wrap;word-break:break-a
 </style></head><body>
 <h1>famulus</h1>
 <div class="mut">bot {{.Bot}} · up {{.Uptime}} · last pass {{.LastPass}}{{range $name, $until := .Paused}} · <span class="warn">{{$name}} paused until {{$until}}</span>{{end}}</div>
+<div class="mut">last successful pass {{.LastGood}} · consecutive failures {{.Failures}}</div>
+{{if .LastError}}<pre class="warn">{{.LastError}}</pre>{{end}}
 <div class="mut">{{range $i, $c := .Counts}}{{if $i}} · {{end}}{{$c.Status}} {{$c.N}}{{end}}</div>
 <h2>Tasks</h2>
 <table>{{range .Rows}}<tr>

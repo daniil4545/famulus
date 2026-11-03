@@ -1,6 +1,7 @@
 package panel
 
 import (
+	"errors"
 	"fmt"
 	"log/slog"
 	"net/http/httptest"
@@ -11,6 +12,38 @@ import (
 
 	"github.com/daniil4545/famulus/internal/state"
 )
+
+func TestHealthAndVisibleStatus(t *testing.T) {
+	now := time.Date(2026, 11, 3, 12, 0, 0, 0, time.UTC)
+	health := NewHealth(now)
+	p := &Panel{Health: health, Now: func() time.Time { return now }, StatePath: filepath.Join(t.TempDir(), "state.json"), Log: NewLog(1), Logger: slog.New(slog.DiscardHandler)}
+	check := func(want int) {
+		t.Helper()
+		rec := httptest.NewRecorder()
+		p.ServeHTTP(rec, httptest.NewRequestWithContext(t.Context(), "GET", "/healthz", nil))
+		if rec.Code != want {
+			t.Fatalf("healthz = %d, want %d", rec.Code, want)
+		}
+	}
+	check(503)
+	health.Passed(now, 0, nil)
+	check(200)
+	health.Passed(now.Add(time.Minute), 1, errors.New("DNS failure <detail>"))
+	now = now.Add(5*time.Minute - time.Nanosecond)
+	check(200)
+	now = now.Add(time.Nanosecond)
+	check(503)
+	rec := httptest.NewRecorder()
+	p.ServeHTTP(rec, httptest.NewRequestWithContext(t.Context(), "GET", "/", nil))
+	for _, want := range []string{"last successful pass 2026-11-03T12:00:00Z", "consecutive failures 1", "DNS failure &lt;detail&gt;"} {
+		if !strings.Contains(rec.Body.String(), want) {
+			t.Errorf("panel lacks %q", want)
+		}
+	}
+	health.Passed(now, 0, nil)
+	check(200)
+	t.Logf("startup=503, fresh=200, stale=503; panel shows last success, cause, failure count and alert")
+}
 
 func TestLogKeepsLastLines(t *testing.T) {
 	l := NewLog(2)

@@ -26,6 +26,8 @@ type GitHub interface {
 	Notes(ctx context.Context, repo string, number int, pull bool, since time.Time) ([]github.Note, error)
 	CreatePR(ctx context.Context, repo, head, base, title, body string) (github.PullRequest, error)
 	PR(ctx context.Context, repo string, number int) (github.PullRequest, error)
+	CreateIssue(ctx context.Context, repo, title, body string, labels []string) (github.Issue, error)
+	CloseIssue(ctx context.Context, repo string, number int) error
 }
 
 type Workspace interface {
@@ -51,7 +53,8 @@ type Yard struct {
 	// Clock replaces time.Now in tests.
 	Clock func() time.Time
 	// Passed, when set, hears the end of every pass.
-	Passed func(time.Time)
+	Passed func(time.Time, int, error)
+	alert  alert
 }
 
 const leftoverMessage = "chore: commit changes the agent left uncommitted"
@@ -80,23 +83,75 @@ func (y *Yard) Run(ctx context.Context) {
 
 // Pass looks at every repository once and runs at most one agent at a time.
 func (y *Yard) Pass(ctx context.Context) {
+	start := y.now()
+	if y.alert.lastGood.IsZero() {
+		y.alert.lastGood = start
+	}
+	var result passResult
 	for _, repo := range y.Config.Repos {
 		if ctx.Err() != nil {
-			return
+			result.failed(ctx.Err())
+			break
 		}
-		if err := y.passRepo(ctx, repo); err != nil {
+		result.repos++
+		result.repo = repo.Name
+		if err := y.passRepo(ctx, repo, &result); err != nil {
+			result.failed(err)
 			y.Log.Error("pass failed", "repo", repo.Name, "err", err)
 		}
+		result.repo = ""
 	}
+	if err := ctx.Err(); err != nil && result.errors == 0 {
+		result.failed(err)
+	}
+	at := y.now()
+	if ctx.Err() == nil {
+		if err := y.reportAlert(ctx, at, result.errors, result.last); err != nil {
+			if result.errors == 0 {
+				y.alert.failed(at, err)
+			}
+			result.failed(err)
+			y.Log.Error("alert failed", "err", err)
+		}
+	}
+	y.Log.Info("pass done", "repos", result.repos, "tasks", result.tasks, "prs", result.prs, "errors", result.errors, "duration", y.now().Sub(start))
 	if y.Passed != nil {
-		y.Passed(y.now())
+		y.Passed(y.now(), result.errors, result.last)
 	}
 }
 
-func (y *Yard) passRepo(ctx context.Context, repo config.Repo) error {
+type passResult struct {
+	repos, tasks, prs, errors int
+	repo                      string
+	last                      error
+}
+
+func (p *passResult) failed(err error) {
+	if _, ok := errors.AsType[*reportedTaskError](err); ok {
+		return
+	}
+	p.errors++
+	if p.repo != "" {
+		err = &repoError{repo: p.repo, err: err}
+	}
+	p.last = err
+}
+
+// repoError names the repository of a failure for the public alert, whose text holds no raw cause.
+type repoError struct {
+	repo string
+	err  error
+}
+
+func (e *repoError) Error() string { return e.repo + ": " + e.err.Error() }
+func (e *repoError) Unwrap() error { return e.err }
+
+func (y *Yard) passRepo(ctx context.Context, repo config.Repo, result *passResult) error {
 	for _, t := range y.State.Tasks {
 		if t.Repo == repo.Name && t.Status == state.Review && !y.paused(t.Agent) {
+			result.prs++
 			if err := y.followPR(ctx, repo, t); err != nil {
+				result.failed(err)
 				y.Log.Error("follow pr failed", "task", state.Key(t.Repo, t.Issue), "pr", t.PR, "err", err)
 			}
 		}
@@ -129,8 +184,10 @@ func (y *Yard) passRepo(ctx context.Context, repo config.Repo) error {
 			err = y.start(ctx, repo, issue)
 		}
 		if err != nil {
+			result.failed(err)
 			y.Log.Error("issue failed", "task", state.Key(repo.Name, issue.Number), "err", err)
 		}
+		result.tasks++
 	}
 	return nil
 }
@@ -328,14 +385,27 @@ func (y *Yard) fail(ctx context.Context, t *state.Task, cause error) error {
 	}
 	msg := fmt.Sprintf("famulus could not finish this run: %s\n\nRemove the `%s` label to try again.%s",
 		cause, y.label(state.Failed), footer(t))
+	reported := true
 	if err := y.GitHub.Comment(ctx, t.Repo, t.Issue, msg); err != nil {
 		y.Log.Warn("failure comment", "task", state.Key(t.Repo, t.Issue), "err", err)
+		reported = false
 	}
 	if err := y.setStatus(ctx, t, state.Failed); err != nil {
 		y.Log.Warn("failure label", "task", state.Key(t.Repo, t.Issue), "err", err)
+		reported = false
+	}
+	if reported {
+		return &reportedTaskError{err: cause}
 	}
 	return cause
 }
+
+// reportedTaskError is a failed run already reported on its issue: the task failed, not the runner,
+// so it does not count toward the runner alert.
+type reportedTaskError struct{ err error }
+
+func (e *reportedTaskError) Error() string { return e.err.Error() }
+func (e *reportedTaskError) Unwrap() error { return e.err }
 
 // setStatus moves the task and its issue label together and saves the state file.
 func (y *Yard) setStatus(ctx context.Context, t *state.Task, status state.Status) error {

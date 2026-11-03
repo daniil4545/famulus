@@ -20,6 +20,14 @@ import (
 // ErrNotFound marks a 404 answer.
 var ErrNotFound = errors.New("not found")
 
+// HTTPError is a GitHub answer with an error status other than 404.
+type HTTPError struct {
+	Status  int
+	Message string
+}
+
+func (e *HTTPError) Error() string { return fmt.Sprintf("http %d: %s", e.Status, e.Message) }
+
 type Client struct {
 	baseURL string
 	http    *http.Client
@@ -182,20 +190,32 @@ func (c *Client) Comment(ctx context.Context, repo string, number int, body stri
 	return c.repoCall(ctx, repo, http.MethodPost, fmt.Sprintf("/issues/%d/comments", number), map[string]string{"body": body}, nil)
 }
 
+func (c *Client) CreateIssue(ctx context.Context, repo, title, body string, labels []string) (Issue, error) {
+	for _, label := range labels {
+		err := c.repoCall(ctx, repo, http.MethodGet, "/labels/"+url.PathEscape(label), nil, nil)
+		if errors.Is(err, ErrNotFound) {
+			err = c.repoCall(ctx, repo, http.MethodPost, "/labels", map[string]string{"name": label, "color": "b60205"}, nil)
+		}
+		if err != nil {
+			return Issue{}, fmt.Errorf("ensure issue label: %w", err)
+		}
+	}
+	var issue Issue
+	err := c.repoCall(ctx, repo, http.MethodPost, "/issues", map[string]any{"title": title, "body": body, "labels": labels}, &issue)
+	return issue, err
+}
+
+func (c *Client) CloseIssue(ctx context.Context, repo string, number int) error {
+	return c.repoCall(ctx, repo, http.MethodPatch, fmt.Sprintf("/issues/%d", number), map[string]string{"state": "closed"}, nil)
+}
+
 // Notes returns what people wrote on an issue or pull request after since, oldest first:
 // comments, and for a pull request also reviews and line comments.
-// simplified: first 100 of each kind; revisit if threads grow longer.
+// Issue comments are paginated for long-lived alerts; review kinds take the first 100.
 func (c *Client) Notes(ctx context.Context, repo string, number int, pull bool, since time.Time) ([]Note, error) {
-	type comment struct {
-		User    User      `json:"user"`
-		Body    string    `json:"body"`
-		Path    string    `json:"path"`
-		Line    int       `json:"line"`
-		Created time.Time `json:"created_at"`
-	}
 	q := url.Values{"per_page": {"100"}, "since": {since.UTC().Format(time.RFC3339)}}
-	var comments []comment
-	if err := c.repoCall(ctx, repo, http.MethodGet, fmt.Sprintf("/issues/%d/comments?%s", number, q.Encode()), nil, &comments); err != nil {
+	comments, err := c.issueComments(ctx, repo, number, q)
+	if err != nil {
 		return nil, err
 	}
 	var notes []Note
@@ -235,6 +255,29 @@ func (c *Client) Notes(ctx context.Context, repo string, number int, pull bool, 
 	}
 	slices.SortStableFunc(kept, func(a, b Note) int { return a.Created.Compare(b.Created) })
 	return kept, nil
+}
+
+type comment struct {
+	User    User      `json:"user"`
+	Body    string    `json:"body"`
+	Path    string    `json:"path"`
+	Line    int       `json:"line"`
+	Created time.Time `json:"created_at"`
+}
+
+func (c *Client) issueComments(ctx context.Context, repo string, number int, q url.Values) ([]comment, error) {
+	var comments []comment
+	for page := 1; ; page++ {
+		var batch []comment
+		path := fmt.Sprintf("/issues/%d/comments?%s&page=%d", number, q.Encode(), page)
+		if err := c.repoCall(ctx, repo, http.MethodGet, path, nil, &batch); err != nil {
+			return nil, err
+		}
+		comments = append(comments, batch...)
+		if len(batch) < 100 {
+			return comments, nil
+		}
+	}
 }
 
 func (c *Client) CreatePR(ctx context.Context, repo, head, base, title, body string) (PullRequest, error) {
@@ -296,7 +339,7 @@ func (c *Client) call(ctx context.Context, auth, method, path string, body, out 
 			Message string `json:"message"`
 		}
 		_ = json.Unmarshal(raw, &msg) // the status alone is enough when the body is not JSON
-		return fmt.Errorf("http %d: %s", resp.StatusCode, msg.Message)
+		return &HTTPError{Status: resp.StatusCode, Message: msg.Message}
 	}
 	if out == nil || len(raw) == 0 {
 		return nil

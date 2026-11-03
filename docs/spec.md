@@ -67,6 +67,25 @@ One pass, per repository:
 5. Before a PR exists, a run with no commits and no `## Questions` heading is unfinished: the
    runner sends the same session a nudge, up to 2 times, then the task fails.
 
+Each completed pass logs one `pass done` line with repository, handled issue and followed PR
+counts, errors and duration. Repository, PR and issue failures count; their causes are logged
+where handled. A failed run already reported on its issue (comment and `agent:failed`) is a
+task failure, not a runner failure, and does not count. An interrupted pass counts as failed.
+
+With `alert_repo` set (empty by default), three consecutive failed passes or five minutes
+without a successful pass during a failure open `famulus: failure`, labeled `famulus:alert`.
+The check runs at pass completion; it does not interrupt a busy agent. The runner looks up
+the open labeled issue on every pass, including after restart, and comments at most hourly.
+The first successful pass comments `recovered, down from X to Y` and closes the issue. If
+GitHub was unreachable, the pending outage is opened and closed on recovery. Pending outages
+before issue creation are held in memory. Alerts publish safe error categories; arbitrary
+CLI and remote error text stays in the local log.
+
+The panel shows the last pass, last successful pass (UTC), consecutive failures and last
+error. `/healthz` returns 200 only when a successful pass finished less than
+five minutes ago; startup and stale health return 503. Docker probes it with curl. A long
+agent run can make health stale; unhealthy does not restart the container.
+
 ## 3. States
 
 The issue label `agent:<state>` mirrors the task state, so the owner sees it on GitHub.
@@ -105,6 +124,7 @@ pause end of each agent and the count of new issues started on the current UTC d
 | `internal/agent` | the three CLIs behind one call: prompt and session in, session and final message out |
 | `internal/state` | `state.json`, written through a temporary file |
 | `internal/yard` | the pass, state changes, prompts |
+| `internal/yard/alert.go` | failure issue lifecycle in `alert_repo`, restart lookup and hourly updates |
 | `internal/panel` | read-only admin page on `panel` (default `:8080`): health, tasks from `state.json`, last log lines |
 | `rules/AGENTS.md` | rules every first prompt starts with |
 
@@ -149,6 +169,13 @@ What the runner does not do on any input:
 | S11 | agent reports a used-up plan, also only in the OpenCode error log while the CLI waits | label `agent:paused`, one comment with the retry time, automatic retry |
 | S12 | agent ends its turn with no commits and no questions | same session nudged up to 2 times; still nothing - `agent:failed` with a comment |
 | S13 | `daily_limit` new issues already started today | further new issues wait untouched until the next UTC day; owner notes on open PRs still run |
+| S14 | repository, PR or issue fails during a pass | error cause logged once, one pass summary counts the failure; panel records no success; a run failure reported on its issue does not count |
+| S15 | three consecutive failed passes, or five minutes without success during failure | one labeled failure issue opens in `alert_repo`; an empty setting disables alerts |
+| S16 | an alert remains open, including after restart | reuse it; failure comments no more than hourly |
+| S17 | first successful pass after an alert | recovery comment with outage period, then close; retrying closure does not duplicate recovery comments |
+| S18 | GitHub unreachable throughout a qualifying outage | open and immediately close an outage issue on recovery |
+| S19 | startup, or last successful pass at least five minutes ago | `/healthz` returns 503; fresh success returns 200; panel shows health |
+| S20 | error contains credentials or arbitrary agent output | public alert contains only a safe cause category |
 
 ## 8. Decisions
 
@@ -159,10 +186,10 @@ What the runner does not do on any input:
 - The runner, not the agent, pushes and opens the PR: deterministic, and the agent holds
   no credentials.
 - Rules travel in the prompt, not in files in the image: the same text for all three CLIs.
-- simplified: one agent at a time and the first 100 issues and notes per call; revisit with
-  parallel agents.
+- simplified: one agent at a time, first 100 issues and review notes per call. Issue comments
+  are paginated so long-lived alerts can deduplicate recovery comments.
 
 ## 9. Out of scope
 
-Acceptance gates and scores of admitd, parallel agents, tasks from tix, notifications, a web
-panel, Linux builds of macOS-only projects (tarn's Swift part does not build in the container).
+Acceptance gates and scores of admitd, parallel agents, tasks from tix, notifications outside
+GitHub, Linux builds of macOS-only projects (tarn's Swift part does not build in the container).

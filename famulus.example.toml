@@ -11,6 +11,7 @@ timeout = "60m"    # one agent run
 limit_pause = "1h" # rest after a used-up plan when the provider names no time
 daily_limit = 5    # new issues started per UTC day; 0 turns the cap off
 work_dir = "/work" # clones, worktrees and state.json, a Docker volume
+alert_repo = "daniil4545/famulus" # failure issues; empty or omitted disables alerts
 
 # Default agent: opencode, claude or codex. An issue label agent:<name> overrides it.
 agent = "opencode"
