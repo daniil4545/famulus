@@ -38,6 +38,7 @@ func LinkedIssues(body string) []int {
 
 type PRFile struct {
 	Path      string `json:"filename"`
+	Previous  string `json:"previous_filename"` // set on renames
 	Status    string `json:"status"`
 	Additions int    `json:"additions"`
 	Deletions int    `json:"deletions"`

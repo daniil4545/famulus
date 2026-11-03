@@ -75,7 +75,7 @@ func TestReviewReads(t *testing.T) {
 				}
 			case "pulls/7/files":
 				files, err := c.PRFiles(ctx, "o/r", 7)
-				if err != nil || len(files) != 101 || files[100] != (PRFile{"a.go", "modified", 3, 2}) {
+				if err != nil || len(files) != 101 || files[100] != (PRFile{Path: "a.go", Status: "modified", Additions: 3, Deletions: 2}) {
 					t.Fatalf("files: %v, %v", files, err)
 				}
 			case "pulls/7/reviews":

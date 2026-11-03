@@ -139,17 +139,25 @@ func (y *Yard) setCheck(ctx context.Context, repo config.Repo, pr github.PullReq
 func gateFiles(files []github.PRFile, patterns []string) []string {
 	var out []string
 	for _, f := range files {
-		for _, p := range patterns {
-			dir, tree := strings.CutSuffix(p, "/**")
-			whole, _ := path.Match(p, f.Path)
-			base, _ := path.Match(p, path.Base(f.Path))
-			if (tree && strings.HasPrefix(f.Path, dir+"/")) || (!tree && (whole || base)) {
-				out = append(out, f.Path)
-				break
-			}
+		// a rename moves a gate file away under a new name: both sides count
+		if slices.ContainsFunc([]string{f.Path, f.Previous}, func(p string) bool { return p != "" && gateFile(p, patterns) }) {
+			out = append(out, f.Path)
 		}
 	}
 	return out
+}
+
+// Patterns are validated when the config loads, so Match errors cannot occur here.
+func gateFile(name string, patterns []string) bool {
+	for _, p := range patterns {
+		dir, tree := strings.CutSuffix(p, "/**")
+		whole, _ := path.Match(p, name)
+		base, _ := path.Match(p, path.Base(name))
+		if (tree && strings.HasPrefix(name, dir+"/")) || (!tree && (whole || base)) {
+			return true
+		}
+	}
+	return false
 }
 
 func hasLabel(labels []github.Label, name string) bool {

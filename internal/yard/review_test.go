@@ -31,7 +31,7 @@ func TestReviewDecisionTable(t *testing.T) {
 	cases := []struct {
 		name   string
 		ci     map[string]github.CI
-		files  []string
+		files  []github.PRFile
 		labels []string
 		check  string
 		posted bool
@@ -39,9 +39,10 @@ func TestReviewDecisionTable(t *testing.T) {
 		{"ci running", map[string]github.CI{"s1": {State: "pending"}}, nil, nil, "s1 in_progress : Waiting for CI", false},
 		{"ci red", map[string]github.CI{"s1": {State: "failure", Failed: []string{"gate"}}}, nil, nil, "s1 in_progress : Waiting for green CI", false},
 		{"main red", map[string]github.CI{"main": {State: "failure", Failed: []string{"app"}}}, nil, nil, "s1 in_progress : main is red", false},
-		{"gate file without label", nil, []string{"src/a.go", ".github/workflows/ci.yml"}, nil, "s1 completed failure: Gate files changed without the label", true},
-		{"gate file with label", nil, []string{"tools/x.mk"}, []string{"gate-change"}, "s1 queued : " + reviewNext, false},
-		{"clean", nil, []string{"src/a.go"}, nil, "s1 queued : " + reviewNext, false},
+		{"gate file without label", nil, []github.PRFile{{Path: "src/a.go"}, {Path: ".github/workflows/ci.yml"}}, nil, "s1 completed failure: Gate files changed without the label", true},
+		{"gate file with label", nil, []github.PRFile{{Path: "tools/x.mk"}}, []string{"gate-change"}, "s1 queued : " + reviewNext, false},
+		{"gate file renamed away", nil, []github.PRFile{{Path: "ci.txt", Previous: ".github/workflows/ci.yml"}}, nil, "s1 completed failure: Gate files changed without the label", true},
+		{"clean", nil, []github.PRFile{{Path: "src/a.go"}}, nil, "s1 queued : " + reviewNext, false},
 	}
 	for _, c := range cases {
 		t.Run(c.name, func(t *testing.T) {
@@ -50,9 +51,7 @@ func TestReviewDecisionTable(t *testing.T) {
 			if c.ci != nil {
 				gh.ci = c.ci
 			}
-			for _, f := range c.files {
-				gh.files[7] = append(gh.files[7], github.PRFile{Path: f})
-			}
+			gh.files[7] = c.files
 			y := reviewYard(t, gh)
 			y.Pass(t.Context())
 			if !slices.Equal(gh.checks, []string{c.check}) || (len(gh.posted) == 1) != c.posted {

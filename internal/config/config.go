@@ -5,6 +5,7 @@ package config
 import (
 	"errors"
 	"fmt"
+	"path"
 	"slices"
 	"time"
 
@@ -61,7 +62,7 @@ func Load(path string) (Config, error) {
 		WorkDir:    "/work",
 		Panel:      ":8080",
 		Agent:      OpenCode,
-		GateFiles:  []string{".github/workflows/**", ".golangci.yml", ".swiftlint.yml", ".gitleaks.toml", "ruff.toml", "Makefile", "*.mk"},
+		GateFiles:  []string{".github/workflows/**", ".github/actions/**", ".golangci.yml", ".golangci.yaml", ".golangci.toml", ".swiftlint.yml", ".gitleaks.toml", "ruff.toml", "Makefile", "*.mk"},
 	}
 	if _, err := toml.DecodeFile(path, &cfg); err != nil {
 		return Config{}, fmt.Errorf("read %s: %w", path, err)
@@ -75,6 +76,9 @@ func (c Config) check() error {
 	}
 	if len(c.Repos) == 0 {
 		return errors.New("no repos")
+	}
+	if err := checkPatterns(c.GateFiles); err != nil {
+		return err
 	}
 	if c.DailyLimit < 0 {
 		return errors.New("daily_limit is negative")
@@ -109,4 +113,13 @@ func checkAgent(name string) error {
 		return nil
 	}
 	return fmt.Errorf("unknown agent %q: want claude, codex or opencode", name)
+}
+
+func checkPatterns(patterns []string) error {
+	for _, p := range patterns {
+		if _, err := path.Match(p, ""); err != nil {
+			return fmt.Errorf("gate_files %q: %w", p, err)
+		}
+	}
+	return nil
 }
