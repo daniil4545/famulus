@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"net/http"
 	"regexp"
 	"slices"
 	"strconv"
@@ -36,14 +37,15 @@ type finding struct {
 // verdict. The agent works in a detached worktree that is removed afterwards.
 func (y *Yard) agentReview(ctx context.Context, repo config.Repo, pr github.PullRequest, files []github.PRFile) error {
 	if y.paused(config.Claude) {
-		return y.setCheck(ctx, repo, pr, github.Check{
-			Status: "queued", Title: "Agent review paused",
-			Summary: "The review agent's plan is used up until " + y.State.Paused[config.Claude].Format("2006-01-02 15:04") + " UTC.",
-		})
+		return y.pausedCheck(ctx, repo, pr)
 	}
-	// a restart after the post: the bot's review on this commit stands
-	if given, err := y.givenReview(ctx, repo, pr); err != nil || given {
-		return err
+	// a restart after the post: the bot's review on this commit stands, its check is finished
+	if given, err := y.givenReview(ctx, repo, pr); err != nil || given != "" {
+		if err != nil {
+			return err
+		}
+		event, title := givenEvents[given][0], givenEvents[given][1]
+		return y.verdict(ctx, repo, pr, event, "Review already published on this commit.", title, nil)
 	}
 	prompt, err := y.reviewPrompt(ctx, repo, pr, files)
 	if err != nil {
@@ -61,7 +63,7 @@ func (y *Yard) agentReview(ctx context.Context, repo config.Repo, pr github.Pull
 	ans, err := y.askReviewer(ctx, dir, prompt+"\n\n## Diff\n\n```diff\n"+diff+"\n```\n")
 	if limit, ok := errors.AsType[*agent.LimitError](err); ok {
 		y.pauseReviews(limit)
-		return nil
+		return y.pausedCheck(ctx, repo, pr)
 	}
 	if ctx.Err() != nil {
 		return fmt.Errorf("review interrupted: %w", ctx.Err())
@@ -75,12 +77,47 @@ func (y *Yard) agentReview(ctx context.Context, repo config.Repo, pr github.Pull
 		}
 		return y.verdict(ctx, repo, pr, "COMMENT", "famulus review failed: "+reason+". Push a new commit to retry.", "Review failed", nil)
 	}
+	return y.publish(ctx, repo, pr, ans, files)
+}
+
+// publish posts the verdict with findings on their lines, falling back to the body.
+func (y *Yard) publish(ctx context.Context, repo config.Repo, pr github.PullRequest, ans answer, files []github.PRFile) error {
 	event, title := "APPROVE", "Approved"
 	if ans.Verdict == "request_changes" {
 		event, title = "REQUEST_CHANGES", "Changes requested"
 	}
 	body, comments := reviewBody(ans, files)
-	return y.verdict(ctx, repo, pr, event, body, title, comments)
+	err := y.verdict(ctx, repo, pr, event, body, title, comments)
+	if status, ok := errors.AsType[*github.HTTPError](err); ok && status.Status == http.StatusUnprocessableEntity && len(comments) > 0 {
+		// GitHub refuses the whole review for one line it does not accept: all in the body
+		body, _ = reviewBody(ans, nil)
+		err = y.verdict(ctx, repo, pr, event, body, title, nil)
+	}
+	if status, ok := errors.AsType[*github.HTTPError](err); ok && permanent(status.Status) {
+		// a refused publish stays refused: no new model run on this SHA
+		y.recordVerdict(repo, pr, "PUBLISH_FAILED")
+		if err := y.setCheck(ctx, repo, pr, github.Check{
+			Status: "completed", Conclusion: "failure", Title: "Publishing the review failed",
+			Summary: fmt.Sprintf("GitHub answered %d to the review. Push a new commit to retry.", status.Status),
+		}); err != nil {
+			y.Log.Warn("publish failure check", "repo", repo.Name, "pr", pr.Number, "err", err)
+		}
+	}
+	return err
+}
+
+func (y *Yard) pausedCheck(ctx context.Context, repo config.Repo, pr github.PullRequest) error {
+	return y.setCheck(ctx, repo, pr, github.Check{
+		Status: "queued", Title: "Agent review paused",
+		Summary: "The review agent's plan is used up until " + y.State.Paused[config.Claude].Format("2006-01-02 15:04") + " UTC.",
+	})
+}
+
+// givenEvents maps a review state GitHub reports to the event and check title that gave it.
+var givenEvents = map[string][2]string{
+	"APPROVED":          {"APPROVE", "Approved"},
+	"CHANGES_REQUESTED": {"REQUEST_CHANGES", "Changes requested"},
+	"COMMENTED":         {"COMMENT", "Review failed"},
 }
 
 var errBadAnswer = errors.New("no valid answer")
@@ -105,20 +142,20 @@ func (y *Yard) askReviewer(ctx context.Context, dir, prompt string) (answer, err
 	return answer{}, errBadAnswer
 }
 
-func (y *Yard) givenReview(ctx context.Context, repo config.Repo, pr github.PullRequest) (bool, error) {
+// givenReview returns the state of the bot's review on the head SHA, empty when there is none.
+func (y *Yard) givenReview(ctx context.Context, repo config.Repo, pr github.PullRequest) (string, error) {
 	reviews, err := y.GitHub.Reviews(ctx, repo.Name, pr.Number)
 	if err != nil {
-		return false, fmt.Errorf("pr reviews: %w", err)
+		return "", fmt.Errorf("pr reviews: %w", err)
 	}
-	i := slices.IndexFunc(reviews, func(r github.Review) bool { return r.User.Login == y.Bot && r.CommitID == pr.Head.SHA })
+	i := slices.IndexFunc(reviews, func(r github.Review) bool {
+		_, known := givenEvents[r.State]
+		return r.User.Login == y.Bot && r.CommitID == pr.Head.SHA && known
+	})
 	if i < 0 {
-		return false, nil
+		return "", nil
 	}
-	y.recordVerdict(repo, pr, reviews[i].State)
-	if err := y.State.Save(); err != nil {
-		return true, fmt.Errorf("save state: %w", err)
-	}
-	return true, nil
+	return reviews[i].State, nil
 }
 
 // reviewPrompt carries only the owner's text (R2): the PR is the owner's, and linked issues
@@ -158,6 +195,9 @@ func parseAnswer(text string) (answer, error) {
 	if err := dec.Decode(&a); err != nil {
 		return answer{}, fmt.Errorf("invalid JSON: %w", err)
 	}
+	if dec.More() {
+		return answer{}, errors.New("more than one JSON object")
+	}
 	if strings.TrimSpace(a.Summary) == "" {
 		return answer{}, errors.New("empty summary")
 	}
@@ -195,8 +235,15 @@ func reviewBody(a answer, files []github.PRFile) (string, []github.ReviewComment
 		}
 		fmt.Fprintf(&body, "\n\n- `%s` %s", where, strings.ReplaceAll(text, "\n\n", " "))
 	}
-	return body.String(), comments
+	text := body.String()
+	if len(text) > maxBody {
+		// GitHub refuses a review body over 65536 characters
+		text = text[:maxBody] + "\n\n[cut: the review was longer]"
+	}
+	return text, comments
 }
+
+const maxBody = 60000
 
 var hunk = regexp.MustCompile(`(?m)^@@ -\d+(?:,\d+)? \+(\d+)(?:,(\d+))? @@`)
 
@@ -217,4 +264,9 @@ func inDiff(files []github.PRFile, file string, line int) bool {
 		}
 	}
 	return false
+}
+
+// permanent tells a refusal that a retry of the same review cannot pass from a passing limit.
+func permanent(status int) bool {
+	return status >= 400 && status < 500 && status != http.StatusForbidden && status != http.StatusTooManyRequests
 }

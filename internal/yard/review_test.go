@@ -127,7 +127,7 @@ const changes = `{"verdict": "request_changes", "summary": "Breaks b.", "finding
  {"file": "a.go", "line": 15, "severity": "should", "why": "name unclear"},
  {"file": "README.md", "line": 0, "severity": "should", "why": "docs stale"}]}`
 
-// spec: must and should on their lines inside the diff, the rest in the body; the prompt
+// S25, S27: findings on their lines inside the diff, the rest in the body; the prompt
 // carries the owner's linked issue, not a stranger's; the review tree is removed.
 func TestAgentReviewRequestsChanges(t *testing.T) {
 	gh := newGitHub(
@@ -161,7 +161,7 @@ func TestAgentReviewRequestsChanges(t *testing.T) {
 	}
 }
 
-// spec: a bad answer gets one retry in the same session; two bad answers fail the review
+// S26: a bad answer gets one retry in the same session; two bad answers fail the review
 // without an approval and without repeating on the next pass.
 func TestAgentReviewBadAnswer(t *testing.T) {
 	for _, c := range []struct {
@@ -191,7 +191,7 @@ func TestAgentReviewBadAnswer(t *testing.T) {
 	}
 }
 
-// spec: a used-up plan pauses the review agent; the PR waits and is reviewed after the pause.
+// S28: a used-up plan pauses the review agent; the PR waits and is reviewed after the pause.
 func TestAgentReviewPausedOnLimit(t *testing.T) {
 	gh := newGitHub()
 	gh.open = []github.PullRequest{ownerPR(7, "s1")}
@@ -203,6 +203,9 @@ func TestAgentReviewPausedOnLimit(t *testing.T) {
 		return 0, "", &agent.LimitError{Message: "plan used up", RetryAfter: time.Hour}
 	}
 	y.Pass(t.Context())
+	if gh.checks[len(gh.checks)-1] != "s1 queued : Agent review paused" {
+		t.Fatalf("not paused at once: %q", gh.checks)
+	}
 	y.Pass(t.Context())
 	if len(agents.calls) != 1 || len(gh.posted) != 0 || gh.checks[len(gh.checks)-1] != "s1 queued : Agent review paused" {
 		t.Fatalf("calls = %d, posted = %q, checks = %q", len(agents.calls), gh.posted, gh.checks)
@@ -212,5 +215,48 @@ func TestAgentReviewPausedOnLimit(t *testing.T) {
 	y.Pass(t.Context())
 	if len(gh.posted) != 1 {
 		t.Fatalf("not reviewed after the pause: %q", gh.posted)
+	}
+}
+
+// A restart between the post and the check finishes the check from the published review.
+func TestGivenReviewFinishesCheck(t *testing.T) {
+	gh := newGitHub()
+	gh.open = []github.PullRequest{ownerPR(7, "s1")}
+	gh.reviews[7] = []github.Review{{User: github.User{Login: "bot[bot]"}, CommitID: "s1", State: "CHANGES_REQUESTED"}}
+	y := reviewYard(t, gh)
+	y.Pass(t.Context())
+	if len(y.Agents.(*fakeAgents).calls) != 0 || len(gh.posted) != 0 || gh.checks[len(gh.checks)-1] != "s1 completed failure: Changes requested" {
+		t.Fatalf("posted = %q, checks = %q", gh.posted, gh.checks)
+	}
+}
+
+// A refused line comment moves the findings to the body; a refused review is not re-run.
+func TestRefusedPublish(t *testing.T) {
+	for _, c := range []struct {
+		name   string
+		refuse int
+		posted int
+		check  string
+	}{
+		{"line refused", 1, 1, "s1 completed failure: Changes requested"},
+		{"review refused", 0, 0, "s1 completed failure: Publishing the review failed"},
+	} {
+		t.Run(c.name, func(t *testing.T) {
+			gh := newGitHub()
+			gh.open = []github.PullRequest{ownerPR(7, "s1")}
+			gh.files[7] = []github.PRFile{{Path: "a.go", Patch: "@@ -1,2 +10,5 @@\n+x"}}
+			gh.refuse = &c.refuse
+			y := reviewYard(t, gh)
+			agents := y.Agents.(*fakeAgents)
+			agents.next = func(agent.Request) (int, string, error) { return 0, changes, nil }
+			y.Pass(t.Context())
+			y.Pass(t.Context())
+			if len(agents.calls) != 1 || len(gh.posted) != c.posted || gh.checks[len(gh.checks)-1] != c.check {
+				t.Fatalf("calls = %d, posted = %q, checks = %q", len(agents.calls), gh.posted, gh.checks)
+			}
+			if c.posted == 1 && !strings.Contains(gh.posted[0], "`a.go:11` must") {
+				t.Fatalf("finding not in body: %q", gh.posted[0])
+			}
+		})
 	}
 }

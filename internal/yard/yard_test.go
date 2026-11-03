@@ -121,7 +121,9 @@ type fakeGitHub struct {
 	reviews map[int][]github.Review
 	posted  []string
 	lines   []github.ReviewComment
-	checks  []string
+	// refuse, when set, fails CreateReview for a review with that many line comments or more
+	refuse *int
+	checks []string
 }
 
 func newGitHub(issues ...github.Issue) *fakeGitHub {
@@ -218,6 +220,9 @@ func (f *fakeGitHub) Issue(_ context.Context, _ string, n int) (github.Issue, er
 }
 
 func (f *fakeGitHub) CreateReview(_ context.Context, _ string, n int, sha, event, body string, lines []github.ReviewComment) error {
+	if f.refuse != nil && len(lines) >= *f.refuse {
+		return &github.HTTPError{Status: 422}
+	}
 	f.lines = append(f.lines, lines...)
 	f.posted = append(f.posted, fmt.Sprintf("#%d %s %s: %s", n, sha, event, body))
 	f.reviews[n] = append(f.reviews[n], github.Review{User: github.User{Login: "bot[bot]"}, CommitID: sha, State: event})

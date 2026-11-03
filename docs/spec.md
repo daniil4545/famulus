@@ -111,7 +111,10 @@ when a must finding exists. A bad answer gets one retry in the same session; a s
 answer or a failed run posts a `COMMENT` "famulus review failed" and fails the check, with no
 approval and no retry until a new push. The verdict is `APPROVE` or `REQUEST_CHANGES`; a
 finding whose line is inside a diff hunk becomes a line comment, others go to the body. A
-used-up plan pauses `claude` for tasks and reviews alike; the PR stays queued until then.
+used-up plan pauses `claude` for tasks and reviews alike; the PR stays queued until then. GitHub
+refusing a line comment moves all findings to the body; a review GitHub still refuses (4xx
+other than 403 and 429) fails the check and is not re-run on that SHA. After a restart the
+bot's published review finishes the check without a new model run.
 
 The panel shows the last pass, last successful pass (UTC), consecutive failures and last
 error. `/healthz` returns 200 only when a successful pass finished less than
