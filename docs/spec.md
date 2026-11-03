@@ -201,7 +201,9 @@ What the runner does not do on any input:
 - R5. Gives the agent no GitHub token and no App key.
 - R6. Updates only `famulus` check runs belonging to the configured GitHub App.
 - R7. Runs the review agent read-only: file reading tools inside the review worktree, no shell,
-  writes, network, settings or MCP servers. An answer holding a runner secret is never published.
+  writes, network, settings or MCP servers. The worktree loses the PR's agent files (`.claude`,
+  `CLAUDE.md`, `CLAUDE.local.md`, `.mcp.json`) and symlinks first; the diff still shows them. An
+  answer holding a runner secret, also spaced out or reversed, is not published.
 
 ## 7. Scenarios
 
