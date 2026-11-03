@@ -1,6 +1,7 @@
-.PHONY: build test fmt fmt-check vet lint secrets commit-check check image up
+.PHONY: build test test-race fmt fmt-check vet lint secrets vuln commit-check check ci-check image up
 
 GITLEAKS := go run github.com/zricethezav/gitleaks/v8@v8.30.1
+GOVULNCHECK := go run golang.org/x/vuln/cmd/govulncheck@v1.9.0
 
 build:
 	go build ./...
@@ -8,6 +9,13 @@ build:
 # Tests need git in PATH; no network, no database.
 test:
 	go test -count=1 ./...
+
+# The runner polls, runs agents and serves the panel at once: CI runs the tests with the race detector.
+test-race:
+	go test -race -count=1 ./...
+
+vuln:
+	$(GOVULNCHECK) ./...
 
 # gofumpt and goimports are set in .golangci.yml.
 fmt:
@@ -34,6 +42,9 @@ secrets:
 commit-check: fmt-check vet lint
 
 check: commit-check secrets test build
+
+# A PR into main and a push to main: everything above, races and known vulnerabilities.
+ci-check: commit-check secrets test-race vuln build
 
 image:
 	docker compose build
