@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"context"
 	"errors"
+	"fmt"
 	"log/slog"
 	"path/filepath"
 	"slices"
@@ -112,12 +113,20 @@ type fakeGitHub struct {
 	comments map[int][]string
 	prs      map[int]github.PullRequest
 	created  []string
+	// pull request review
+	open    []github.PullRequest
+	ci      map[string]github.CI
+	files   map[int][]github.PRFile
+	reviews map[int][]github.Review
+	posted  []string
+	checks  []string
 }
 
 func newGitHub(issues ...github.Issue) *fakeGitHub {
 	return &fakeGitHub{
 		issues: issues, labels: map[int][]string{}, notes: map[int][]github.Note{},
 		comments: map[int][]string{}, prs: map[int]github.PullRequest{},
+		ci: map[string]github.CI{}, files: map[int][]github.PRFile{}, reviews: map[int][]github.Review{},
 	}
 }
 
@@ -175,6 +184,37 @@ func (f *fakeGitHub) CreateIssue(context.Context, string, string, string, []stri
 
 func (f *fakeGitHub) CloseIssue(context.Context, string, int) error {
 	return errors.New("unexpected alert closure")
+}
+
+func (f *fakeGitHub) OpenPRs(context.Context, string, string) ([]github.PullRequest, error) {
+	return f.open, nil
+}
+
+// CISummary of a ref nobody set is green.
+func (f *fakeGitHub) CISummary(_ context.Context, _, ref, _ string) (github.CI, error) {
+	if ci, ok := f.ci[ref]; ok {
+		return ci, nil
+	}
+	return github.CI{State: "success"}, nil
+}
+
+func (f *fakeGitHub) PRFiles(_ context.Context, _ string, n int) ([]github.PRFile, error) {
+	return f.files[n], nil
+}
+
+func (f *fakeGitHub) Reviews(_ context.Context, _ string, n int) ([]github.Review, error) {
+	return f.reviews[n], nil
+}
+
+func (f *fakeGitHub) CreateReview(_ context.Context, _ string, n int, sha, event, body string, _ []github.ReviewComment) error {
+	f.posted = append(f.posted, fmt.Sprintf("#%d %s %s: %s", n, sha, event, body))
+	f.reviews[n] = append(f.reviews[n], github.Review{User: github.User{Login: "bot[bot]"}, CommitID: sha, State: event})
+	return nil
+}
+
+func (f *fakeGitHub) UpsertCheck(_ context.Context, _, sha string, c github.Check) error {
+	f.checks = append(f.checks, fmt.Sprintf("%s %s %s: %s", sha, c.Status, c.Conclusion, c.Title))
+	return nil
 }
 
 // fakeWork models a branch as a commit counter; the fake agent adds commits.

@@ -74,6 +74,7 @@ func run() error {
 		State:  store,
 		Log:    log,
 		Passed: health.Passed,
+		Bot:    name,
 	}
 	log.Info("famulus started", "bot", name, "owner", cfg.Owner, "repos", len(cfg.Repos), "interval", cfg.Interval)
 	if *once {

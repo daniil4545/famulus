@@ -40,14 +40,24 @@ type Task struct {
 	Since time.Time `json:"since"`
 }
 
+// PRReview is what the runner decided about one pull request it guards: the head SHA, the text of
+// the famulus check it last set and, once given, the review verdict on that SHA.
+type PRReview struct {
+	SHA     string    `json:"sha"`
+	Check   string    `json:"check,omitempty"`
+	Verdict string    `json:"verdict,omitempty"`
+	At      time.Time `json:"at"`
+}
+
 type Store struct {
 	path  string
 	Tasks map[string]*Task `json:"tasks"`
 	// Paused holds, per agent, the time until which its plan is used up.
 	Paused map[string]time.Time `json:"paused,omitempty"`
 	// StartDay is the UTC date (2006-01-02) that Started counts new issues for.
-	StartDay string `json:"start_day,omitempty"`
-	Started  int    `json:"started,omitempty"`
+	Reviews  map[string]*PRReview `json:"reviews,omitempty"`
+	StartDay string               `json:"start_day,omitempty"`
+	Started  int                  `json:"started,omitempty"`
 }
 
 func Key(repo string, issue int) string {
@@ -56,7 +66,7 @@ func Key(repo string, issue int) string {
 
 // Load reads the file; a missing file is an empty store.
 func Load(path string) (*Store, error) {
-	s := &Store{path: path, Tasks: map[string]*Task{}, Paused: map[string]time.Time{}}
+	s := &Store{path: path, Tasks: map[string]*Task{}, Paused: map[string]time.Time{}, Reviews: map[string]*PRReview{}}
 	raw, err := os.ReadFile(path) //nolint:gosec // the path comes from the operator's config
 	if errors.Is(err, os.ErrNotExist) {
 		return s, nil
@@ -69,6 +79,9 @@ func Load(path string) (*Store, error) {
 	}
 	if s.Paused == nil {
 		s.Paused = map[string]time.Time{}
+	}
+	if s.Reviews == nil {
+		s.Reviews = map[string]*PRReview{}
 	}
 	return s, nil
 }
