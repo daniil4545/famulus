@@ -60,7 +60,6 @@ type Health struct {
 	lastGood  time.Time
 	failures  int
 	lastError string
-	alert     string
 }
 
 func NewHealth(now time.Time) *Health {
@@ -79,12 +78,6 @@ func (h *Health) Passed(at time.Time, errs int, last error) {
 			h.lastError = last.Error()
 		}
 	}
-}
-
-func (h *Health) Alerted(url string) {
-	h.mu.Lock()
-	defer h.mu.Unlock()
-	h.alert = url
 }
 
 type Panel struct {
@@ -108,12 +101,12 @@ type count struct {
 }
 
 type page struct {
-	Bot, Uptime, LastPass, LastGood, LastError, Alert string
-	Failures                                          int
-	Counts                                            []count
-	Paused                                            map[string]string
-	Rows                                              []row
-	Log                                               []string
+	Bot, Uptime, LastPass, LastGood, LastError string
+	Failures                                   int
+	Counts                                     []count
+	Paused                                     map[string]string
+	Rows                                       []row
+	Log                                        []string
 }
 
 // statusOrder is the board from left to right: running, waiting, needs the owner, review, done.
@@ -122,7 +115,7 @@ var statusOrder = []state.Status{state.Working, state.Paused, state.Blocked, sta
 func (p *Panel) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	p.Health.mu.Lock()
 	started, lastPass, lastGood := p.Health.started, p.Health.lastPass, p.Health.lastGood
-	failures, lastError, alert := p.Health.failures, p.Health.lastError, p.Health.alert
+	failures, lastError := p.Health.failures, p.Health.lastError
 	p.Health.mu.Unlock()
 	now := p.Now()
 	if r.URL.Path == "/healthz" {
@@ -142,7 +135,6 @@ func (p *Panel) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		LastGood:  "not yet",
 		Failures:  failures,
 		LastError: lastError,
-		Alert:     alert,
 		Paused:    map[string]string{},
 		Log:       p.Log.Lines(),
 	}
@@ -223,7 +215,7 @@ pre{font:12px/1.4 ui-monospace,monospace;white-space:pre-wrap;word-break:break-a
 </style></head><body>
 <h1>famulus</h1>
 <div class="mut">bot {{.Bot}} · up {{.Uptime}} · last pass {{.LastPass}}{{range $name, $until := .Paused}} · <span class="warn">{{$name}} paused until {{$until}}</span>{{end}}</div>
-<div class="mut">last successful pass {{.LastGood}} · consecutive failures {{.Failures}}{{if .Alert}} · <a href="{{.Alert}}">open alert</a>{{end}}</div>
+<div class="mut">last successful pass {{.LastGood}} · consecutive failures {{.Failures}}</div>
 {{if .LastError}}<pre class="warn">{{.LastError}}</pre>{{end}}
 <div class="mut">{{range $i, $c := .Counts}}{{if $i}} · {{end}}{{$c.Status}} {{$c.N}}{{end}}</div>
 <h2>Tasks</h2>

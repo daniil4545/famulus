@@ -9,11 +9,13 @@ import (
 	"fmt"
 	"net/http"
 	"net/http/httptest"
+	"slices"
 	"strconv"
 	"strings"
 	"testing"
 	"time"
 
+	"github.com/daniil4545/famulus/internal/agent"
 	"github.com/daniil4545/famulus/internal/github"
 )
 
@@ -241,5 +243,20 @@ func TestAlertCauseNamesRepoAndStatus(t *testing.T) {
 		if got := alertCause(c.err); got != c.want {
 			t.Errorf("alertCause(%v) = %q, want %q", c.err, got, c.want)
 		}
+	}
+}
+
+// A failed run is reported on its own issue: the task failed, not the runner.
+func TestReportedTaskFailuresDoNotAlert(t *testing.T) {
+	gh := newGitHub(issue(4, "A"), issue(5, "B"), issue(6, "C"))
+	y, _, agents := newYard(t, gh)
+	agents.next = func(agent.Request) (int, string, error) { return 0, "", errors.New("model overloaded") }
+	var errs []int
+	y.Passed = func(_ time.Time, n int, _ error) { errs = append(errs, n) }
+	for range 3 {
+		y.Pass(t.Context())
+	}
+	if !slices.Equal(errs, []int{0, 0, 0}) || y.alert.failures != 0 {
+		t.Fatalf("pass errors = %v, alert failures = %d", errs, y.alert.failures)
 	}
 }

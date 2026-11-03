@@ -62,17 +62,11 @@ func (y *Yard) reportAlert(ctx context.Context, at time.Time, errs int, last err
 	}
 	if errs == 0 {
 		*a = alert{lastGood: at}
-		if y.Alerted != nil {
-			y.Alerted("")
-		}
 	}
 	return nil
 }
 
 func (y *Yard) syncAlert(ctx context.Context, i github.Issue, at time.Time, errs int) error {
-	if y.Alerted != nil {
-		y.Alerted(fmt.Sprintf("https://github.com/%s/issues/%d", y.Config.AlertRepo, i.Number))
-	}
 	if errs == 0 {
 		return y.recoverAlert(ctx, i, at)
 	}

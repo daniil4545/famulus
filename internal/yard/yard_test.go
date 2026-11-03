@@ -19,7 +19,14 @@ import (
 
 type failingGitHub struct {
 	*fakeGitHub
-	failRepo, failPR bool
+	failRepo, failPR, failComment bool
+}
+
+func (f *failingGitHub) Comment(ctx context.Context, repo string, number int, body string) error {
+	if f.failComment {
+		return errors.New("comment failed")
+	}
+	return f.fakeGitHub.Comment(ctx, repo, number, body)
 }
 
 type cancelAfterList struct {
@@ -69,7 +76,8 @@ func TestPassReportsEveryErrorSource(t *testing.T) {
 		t.Run(source, func(t *testing.T) {
 			gh := newGitHub()
 			y, _, agents := newYard(t, gh)
-			y.GitHub = &failingGitHub{fakeGitHub: gh, failRepo: source == "repo", failPR: source == "pr"}
+			// an agent failure counts only when it could not be reported on its issue
+			y.GitHub = &failingGitHub{fakeGitHub: gh, failRepo: source == "repo", failPR: source == "pr", failComment: source == "issue"}
 			if source == "pr" {
 				y.State.Tasks["o/r#1"] = &state.Task{Repo: "o/r", Issue: 1, PR: 10, Status: state.Review}
 			}

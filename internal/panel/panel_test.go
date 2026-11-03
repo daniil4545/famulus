@@ -29,14 +29,13 @@ func TestHealthAndVisibleStatus(t *testing.T) {
 	health.Passed(now, 0, nil)
 	check(200)
 	health.Passed(now.Add(time.Minute), 1, errors.New("DNS failure <detail>"))
-	health.Alerted("https://github.com/o/r/issues/1")
 	now = now.Add(5*time.Minute - time.Nanosecond)
 	check(200)
 	now = now.Add(time.Nanosecond)
 	check(503)
 	rec := httptest.NewRecorder()
 	p.ServeHTTP(rec, httptest.NewRequestWithContext(t.Context(), "GET", "/", nil))
-	for _, want := range []string{"last successful pass 2026-11-03T12:00:00Z", "consecutive failures 1", "DNS failure &lt;detail&gt;", "https://github.com/o/r/issues/1"} {
+	for _, want := range []string{"last successful pass 2026-11-03T12:00:00Z", "consecutive failures 1", "DNS failure &lt;detail&gt;"} {
 		if !strings.Contains(rec.Body.String(), want) {
 			t.Errorf("panel lacks %q", want)
 		}

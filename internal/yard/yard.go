@@ -53,9 +53,8 @@ type Yard struct {
 	// Clock replaces time.Now in tests.
 	Clock func() time.Time
 	// Passed, when set, hears the end of every pass.
-	Passed  func(time.Time, int, error)
-	Alerted func(string)
-	alert   alert
+	Passed func(time.Time, int, error)
+	alert  alert
 }
 
 const leftoverMessage = "chore: commit changes the agent left uncommitted"
@@ -128,6 +127,9 @@ type passResult struct {
 }
 
 func (p *passResult) failed(err error) {
+	if _, ok := errors.AsType[*reportedTaskError](err); ok {
+		return
+	}
 	p.errors++
 	if p.repo != "" {
 		err = &repoError{repo: p.repo, err: err}
@@ -383,14 +385,26 @@ func (y *Yard) fail(ctx context.Context, t *state.Task, cause error) error {
 	}
 	msg := fmt.Sprintf("famulus could not finish this run: %s\n\nRemove the `%s` label to try again.%s",
 		cause, y.label(state.Failed), footer(t))
+	reported := true
 	if err := y.GitHub.Comment(ctx, t.Repo, t.Issue, msg); err != nil {
 		y.Log.Warn("failure comment", "task", state.Key(t.Repo, t.Issue), "err", err)
+		reported = false
 	}
 	if err := y.setStatus(ctx, t, state.Failed); err != nil {
 		y.Log.Warn("failure label", "task", state.Key(t.Repo, t.Issue), "err", err)
 	}
+	if reported {
+		return &reportedTaskError{err: cause}
+	}
 	return cause
 }
+
+// reportedTaskError is a failed run already reported on its issue: the task failed, not the runner,
+// so it does not count toward the runner alert.
+type reportedTaskError struct{ err error }
+
+func (e *reportedTaskError) Error() string { return e.err.Error() }
+func (e *reportedTaskError) Unwrap() error { return e.err }
 
 // setStatus moves the task and its issue label together and saves the state file.
 func (y *Yard) setStatus(ctx context.Context, t *state.Task, status state.Status) error {
