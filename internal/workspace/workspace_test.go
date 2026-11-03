@@ -118,3 +118,44 @@ func TestPushWithoutForce(t *testing.T) {
 		}
 	}
 }
+
+// A review sees the PR head and its diff; what the agent leaves there never reaches the remote.
+func TestReviewTree(t *testing.T) {
+	ctx := context.Background()
+	server := remote(t)
+	bare := filepath.Join(server, "o", "r.git")
+	seed := t.TempDir()
+	run(t, seed, "clone", "-q", bare, ".")
+	if err := os.WriteFile(filepath.Join(seed, "a.go"), []byte("package a\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	run(t, seed, "add", "a.go")
+	run(t, seed, "-c", "user.name=t", "-c", "user.email=t@t", "commit", "-q", "-m", "add a")
+	run(t, seed, "push", "-q", "origin", "HEAD:refs/pull/7/head")
+	sha := run(t, seed, "rev-parse", "HEAD")
+	ws := New(t.TempDir(), server, func(context.Context, string) (string, error) { return "tok", nil }, "bot", "bot@x")
+
+	dir, diff, err := ws.ReviewTree(ctx, "o/r", "main", 7, sha)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if run(t, dir, "rev-parse", "HEAD") != sha || !strings.Contains(diff, "+package a") {
+		t.Fatalf("head or diff wrong: %q", diff)
+	}
+	if err := os.WriteFile(filepath.Join(dir, "junk"), []byte("x"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	// a second review of the same PR starts clean
+	if dir, _, err = ws.ReviewTree(ctx, "o/r", "main", 7, sha); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := os.Stat(filepath.Join(dir, "junk")); !os.IsNotExist(err) {
+		t.Fatalf("junk survived: %v", err)
+	}
+	if err := ws.RemoveReview(ctx, "o/r", 7); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := os.Stat(dir); !os.IsNotExist(err) {
+		t.Fatalf("review tree left: %v", err)
+	}
+}
