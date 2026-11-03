@@ -166,6 +166,28 @@ echo '{"type":"result","is_error":false,"result":"ok","session_id":"c-9"}'
 	}
 }
 
+// spec: S30. The review agent reads code written by anyone: no shell, writes, network,
+// settings or MCP servers.
+func TestRunReadOnlyClaude(t *testing.T) {
+	dir := t.TempDir()
+	script := filepath.Join(dir, "fake")
+	body := `#!/bin/sh
+echo "$@" > args.txt
+echo '{"type":"result","is_error":false,"result":"ok","session_id":"c-9"}'
+`
+	if err := os.WriteFile(script, []byte(body), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	cli := CLI{Commands: map[string]string{config.Claude: script}}
+	if _, err := cli.Run(context.Background(), config.Claude, Request{Dir: dir, Prompt: "p", ReadOnly: true}); err != nil {
+		t.Fatal(err)
+	}
+	args := string(readAt(t, dir, "args.txt"))
+	if strings.Contains(args, "--dangerously-skip-permissions") || !strings.Contains(args, "--restricted --tools Read,Grep,Glob --strict-mcp-config") {
+		t.Fatalf("args = %q", args)
+	}
+}
+
 // spec: S11. On a used-up free tier OpenCode logs the error and waits silently for hours;
 // the run must end at the log line, not at the task timeout.
 func TestOpenCodeLimitInLogEndsWaitingRun(t *testing.T) {

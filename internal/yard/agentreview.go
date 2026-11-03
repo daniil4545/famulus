@@ -88,8 +88,11 @@ func (y *Yard) agentReview(ctx context.Context, repo config.Repo, pr github.Pull
 		y.Log.Error("agent review failed", "repo", repo.Name, "pr", pr.Number, "sha", pr.Head.SHA, "err", err)
 		// the cause may carry CLI output; the public comment names only the kind
 		reason := "the agent run failed (details in the runner log)"
-		if errors.Is(err, errBadAnswer) {
+		switch {
+		case errors.Is(err, errBadAnswer):
 			reason = "the agent answered twice without a valid verdict"
+		case errors.Is(err, errLeak):
+			reason = "the answer held a runner secret and was not published"
 		}
 		return y.verdict(ctx, repo, pr, "COMMENT", "famulus review failed: "+reason+". Push a new commit to retry.", "Review failed", nil)
 	}
@@ -150,17 +153,23 @@ var givenEvents = map[string][2]string{
 	"COMMENTED":         {"COMMENT", "Review failed"},
 }
 
-var errBadAnswer = errors.New("no valid answer")
+var (
+	errBadAnswer = errors.New("no valid answer")
+	errLeak      = errors.New("the answer holds a runner secret")
+)
 
 // askReviewer runs a new session and asks once more when the answer does not parse.
 func (y *Yard) askReviewer(ctx context.Context, dir, prompt string) (answer, error) {
 	runCtx, cancel := context.WithTimeout(ctx, y.Config.Timeout)
 	defer cancel()
-	req := agent.Request{Dir: dir, Prompt: prompt, Model: y.Config.Models[config.Claude], Effort: y.Config.Effort[config.Claude]}
+	req := agent.Request{Dir: dir, Prompt: prompt, Model: y.Config.Models[config.Claude], Effort: y.Config.Effort[config.Claude], ReadOnly: true}
 	for try := range 2 {
 		res, err := y.Agents.Run(runCtx, config.Claude, req)
 		if err != nil {
 			return answer{}, fmt.Errorf("review agent: %w", err)
+		}
+		if agent.Leaks(res.Text) {
+			return answer{}, errLeak
 		}
 		ans, err := parseAnswer(res.Text)
 		if err == nil {

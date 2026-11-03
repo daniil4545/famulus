@@ -100,7 +100,7 @@ the owner holds.
 The verdict is per SHA, so a label added after `REQUEST_CHANGES` takes effect on the next
 push. An unchanged check text is not sent again.
 
-The agent review runs `claude` (model and effort from config, the run timeout) in a new
+The agent review runs `claude` read-only (R7; model and effort from config, the run timeout) in a new
 session, in a detached worktree of the head SHA that is removed afterwards; nothing made there
 is pushed. The prompt is `rules/REVIEW.md` (the maintainer checklist and the answer format),
 the PR title and body, linked issues written by the owner (others' issues are left out, R2),
@@ -200,6 +200,8 @@ What the runner does not do on any input:
 - R4. One agent at a time; a run is cut at `timeout`.
 - R5. Gives the agent no GitHub token and no App key.
 - R6. Updates only `famulus` check runs belonging to the configured GitHub App.
+- R7. Runs the review agent read-only: file reading tools inside the review worktree, no shell,
+  writes, network, settings or MCP servers. An answer holding a runner secret is never published.
 
 ## 7. Scenarios
 
@@ -234,6 +236,7 @@ What the runner does not do on any input:
 | S27 | linked issue written by someone else | left out of the review prompt (R2) |
 | S28 | review agent hits a used-up plan | agent paused, check queued "paused", review runs after the pause |
 | S29 | `review_daily_limit` model runs done today | check queued "Daily review limit reached", no model run; reviewed the next UTC day |
+| S30 | review prompt or code asks the agent to run a command, read a file outside the worktree or print a secret | no tool for it; an answer holding a runner secret is not published, the review fails (R7) |
 
 ## 8. Decisions
 

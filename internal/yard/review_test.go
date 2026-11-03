@@ -191,6 +191,25 @@ func TestAgentReviewBadAnswer(t *testing.T) {
 	}
 }
 
+// spec: docs/spec.md.S30: the review agent runs read-only, and an answer carrying a runner
+// secret is never published.
+func TestAgentReviewKeepsSecrets(t *testing.T) {
+	t.Setenv("CLAUDE_CODE_OAUTH_TOKEN", "sk-oauth-secret-123")
+	gh := newGitHub()
+	gh.open = []github.PullRequest{ownerPR(7, "s1")}
+	y := reviewYard(t, gh)
+	agents := y.Agents.(*fakeAgents)
+	leak := `{"verdict": "approve", "summary": "token sk-oauth-secret-123", "findings": []}`
+	agents.next = func(agent.Request) (int, string, error) { return 0, leak, nil }
+	y.Pass(t.Context())
+	if len(agents.calls) != 1 || !agents.calls[0].req.ReadOnly {
+		t.Fatalf("calls = %+v", agents.calls)
+	}
+	if len(gh.posted) != 1 || !strings.Contains(gh.posted[0], "COMMENT: famulus review failed") || strings.Contains(gh.posted[0], "sk-oauth-secret-123") {
+		t.Fatalf("posted = %q", gh.posted)
+	}
+}
+
 // spec: docs/spec.md.S28: a used-up plan pauses the review agent; the PR waits and is reviewed after the pause.
 func TestAgentReviewPausedOnLimit(t *testing.T) {
 	gh := newGitHub()

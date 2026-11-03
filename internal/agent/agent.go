@@ -23,6 +23,9 @@ type Request struct {
 	Session string
 	Model   string
 	Effort  string
+	// ReadOnly runs the agent without shell, writes, network and MCP, confined to Dir:
+	// the review agent reads code written by anyone.
+	ReadOnly bool
 }
 
 type Result struct {
@@ -129,6 +132,19 @@ func agentEnv(env []string) []string {
 		}
 	}
 	return kept
+}
+
+// secretEnv names the variables whose values must never leave the runner in agent text.
+var secretEnv = []string{"CLAUDE_CODE_OAUTH_TOKEN", "FAMULUS_APP_KEY_B64"}
+
+// Leaks reports whether text carries the value of a runner secret.
+func Leaks(text string) bool {
+	for _, name := range secretEnv {
+		if v := os.Getenv(name); len(v) >= 8 && strings.Contains(text, v) {
+			return true
+		}
+	}
+	return false
 }
 
 // tail keeps the end of an error text, where CLIs print the cause.
