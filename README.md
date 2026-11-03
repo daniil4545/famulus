@@ -53,12 +53,6 @@ Optional logins:
   the `home` volume.
 - OpenCode free models need no login.
 
-Upgrading from agentyard: rename the variables (`envkey mv AGENTYARD_APP_ID FAMULUS_APP_ID`, the
-same for `AGENTYARD_APP_KEY_B64`) and `agentyard.toml` to `famulus.toml`, then copy the volumes
-before the first start, or the runner restarts every queued issue:
-`docker run --rm -v agentyard_work:/from:ro -v famulus_work:/to alpine cp -a /from/. /to/`,
-and the same for `home`.
-
 Tests and linters: `make check` (needs Go, git and golangci-lint).
 
 ## Configuration
