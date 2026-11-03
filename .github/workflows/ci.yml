@@ -1,0 +1,54 @@
+name: ci
+
+# GitHub flow: every PR into main and every push to main run the checks; `gate` is the one
+# required check of main and is red when any job fails or is cancelled.
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+permissions:
+  contents: read
+
+jobs:
+  check:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7.0.0
+        with:
+          go-version-file: go.mod
+      - uses: golangci/golangci-lint-action@ba0d7d2ec06a0ea1cb5fa41b2e4a3ab91d21278a # v9.3.0
+        with:
+          # Pinned: a linter built with an older Go refuses to read the module.
+          version: v2.15.0
+          # make runs the linter itself; the action only installs it.
+          install-only: true
+      - run: make ci-check
+
+  # famulus runs only as this image: a broken Dockerfile breaks the runner, not the tests.
+  image:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - run: docker build --tag famulus:ci .
+
+  gate:
+    if: always()
+    needs: [check, image]
+    runs-on: ubuntu-latest
+    steps:
+      - name: every job passed
+        env:
+          RESULTS: ${{ join(needs.*.result, ' ') }}
+        run: |
+          echo "results: $RESULTS"
+          for r in $RESULTS; do
+            case "$r" in success|skipped) ;; *) exit 1 ;; esac
+          done
