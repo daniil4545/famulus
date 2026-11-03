@@ -53,11 +53,14 @@ type Store struct {
 	path  string
 	Tasks map[string]*Task `json:"tasks"`
 	// Paused holds, per agent, the time until which its plan is used up.
-	Paused map[string]time.Time `json:"paused,omitempty"`
+	Paused  map[string]time.Time `json:"paused,omitempty"`
+	Reviews map[string]*PRReview `json:"reviews,omitempty"`
 	// StartDay is the UTC date (2006-01-02) that Started counts new issues for.
-	Reviews  map[string]*PRReview `json:"reviews,omitempty"`
-	StartDay string               `json:"start_day,omitempty"`
-	Started  int                  `json:"started,omitempty"`
+	StartDay string `json:"start_day,omitempty"`
+	Started  int    `json:"started,omitempty"`
+	// ReviewDay is the UTC date that Reviewed counts agent reviews for.
+	ReviewDay string `json:"review_day,omitempty"`
+	Reviewed  int    `json:"reviewed,omitempty"`
 }
 
 func Key(repo string, issue int) string {

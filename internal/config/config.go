@@ -29,8 +29,10 @@ type Config struct {
 	// no time of its own.
 	LimitPause time.Duration `toml:"limit_pause"`
 	// DailyLimit caps new issues started per UTC day; 0 turns the cap off.
-	DailyLimit int    `toml:"daily_limit"`
-	WorkDir    string `toml:"work_dir"`
+	DailyLimit int `toml:"daily_limit"`
+	// ReviewDailyLimit caps agent reviews per UTC day; 0 turns the cap off.
+	ReviewDailyLimit int    `toml:"review_daily_limit"`
+	WorkDir          string `toml:"work_dir"`
 	// Panel is the listen address of the admin page; empty turns it off.
 	Panel     string            `toml:"panel"`
 	AlertRepo string            `toml:"alert_repo"`
@@ -54,15 +56,16 @@ type Repo struct {
 
 func Load(path string) (Config, error) {
 	cfg := Config{
-		Label:      "agent",
-		Interval:   time.Minute,
-		Timeout:    time.Hour,
-		LimitPause: time.Hour,
-		DailyLimit: 5,
-		WorkDir:    "/work",
-		Panel:      ":8080",
-		Agent:      OpenCode,
-		GateFiles:  []string{".github/workflows/**", ".github/actions/**", ".golangci.yml", ".golangci.yaml", ".golangci.toml", ".swiftlint.yml", ".gitleaks.toml", "ruff.toml", "Makefile", "*.mk"},
+		Label:            "agent",
+		Interval:         time.Minute,
+		Timeout:          time.Hour,
+		LimitPause:       time.Hour,
+		DailyLimit:       5,
+		ReviewDailyLimit: 20,
+		WorkDir:          "/work",
+		Panel:            ":8080",
+		Agent:            OpenCode,
+		GateFiles:        []string{".github/workflows/**", ".github/actions/**", ".golangci.yml", ".golangci.yaml", ".golangci.toml", ".swiftlint.yml", ".gitleaks.toml", "ruff.toml", "Makefile", "*.mk"},
 	}
 	if _, err := toml.DecodeFile(path, &cfg); err != nil {
 		return Config{}, fmt.Errorf("read %s: %w", path, err)
@@ -80,8 +83,8 @@ func (c Config) check() error {
 	if err := checkPatterns(c.GateFiles); err != nil {
 		return err
 	}
-	if c.DailyLimit < 0 {
-		return errors.New("daily_limit is negative")
+	if c.DailyLimit < 0 || c.ReviewDailyLimit < 0 {
+		return errors.New("daily_limit or review_daily_limit is negative")
 	}
 	if err := checkAgent(c.Agent); err != nil {
 		return err

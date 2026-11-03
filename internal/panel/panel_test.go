@@ -122,3 +122,31 @@ func TestPageShowsTasksAndEscapesTitles(t *testing.T) {
 		t.Error("an issue title must be escaped: it is text from GitHub")
 	}
 }
+
+// The panel lists reviews newest first with verdict and check title, and today's run count.
+func TestPageShowsReviews(t *testing.T) {
+	now := time.Date(2026, 11, 3, 12, 0, 0, 0, time.UTC)
+	path := filepath.Join(t.TempDir(), "state.json")
+	store, err := state.Load(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	store.Reviews["o/r#7"] = &state.PRReview{SHA: "abcdef123", Check: "completed failure: Changes requested\nsummary", Verdict: "REQUEST_CHANGES", At: now.Add(-time.Hour)}
+	store.Reviews["o/r#9"] = &state.PRReview{SHA: "99", Check: "in_progress : Waiting for CI\nx", At: now.Add(-time.Minute)}
+	store.ReviewDay, store.Reviewed = "2026-11-03", 4
+	if err := store.Save(); err != nil {
+		t.Fatal(err)
+	}
+	p := &Panel{Health: NewHealth(now), Now: func() time.Time { return now }, StatePath: path, Log: NewLog(1), Logger: slog.New(slog.DiscardHandler)}
+	rec := httptest.NewRecorder()
+	p.ServeHTTP(rec, httptest.NewRequestWithContext(t.Context(), "GET", "/", nil))
+	body := rec.Body.String()
+	for _, want := range []string{"4 agent runs today", "abcdef1", "REQUEST_CHANGES", "Changes requested", "Waiting for CI", "/o/r/pull/7"} {
+		if !strings.Contains(body, want) {
+			t.Errorf("panel lacks %q", want)
+		}
+	}
+	if strings.Index(body, "o/r#9") > strings.Index(body, "o/r#7") {
+		t.Error("latest review is not first")
+	}
+}

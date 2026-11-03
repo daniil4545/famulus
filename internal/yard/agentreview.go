@@ -52,6 +52,12 @@ func (y *Yard) agentReview(ctx context.Context, repo config.Repo, pr github.Pull
 	if ans, ok := y.answers[cached]; ok {
 		return y.publishOnce(ctx, repo, pr, ans, files, cached)
 	}
+	if y.reviewsFull() {
+		return y.setCheck(ctx, repo, pr, github.Check{
+			Status: "queued", Title: "Daily review limit reached",
+			Summary: fmt.Sprintf("%d agent reviews ran today (UTC); this one runs tomorrow.", y.Config.ReviewDailyLimit),
+		})
+	}
 	prompt, err := y.reviewPrompt(ctx, repo, pr, files)
 	if err != nil {
 		return err
@@ -65,6 +71,11 @@ func (y *Yard) agentReview(ctx context.Context, repo config.Repo, pr github.Pull
 			y.Log.Warn("remove review tree", "repo", repo.Name, "pr", pr.Number, "err", err)
 		}
 	}()
+	// every model run counts, a failed one too: the cap is about cost
+	y.countReview()
+	if err := y.State.Save(); err != nil {
+		return fmt.Errorf("save state: %w", err)
+	}
 	ans, err := y.askReviewer(ctx, dir, prompt+"\n\n## Diff\n\n```diff\n"+diff+"\n```\n")
 	if limit, ok := errors.AsType[*agent.LimitError](err); ok {
 		y.pauseReviews(limit)

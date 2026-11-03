@@ -114,7 +114,9 @@ finding whose line is inside a diff hunk becomes a line comment, others go to th
 used-up plan pauses `claude` for tasks and reviews alike; the PR stays queued until then. GitHub
 refusing a line comment moves all findings to the body; a review GitHub still refuses (400, 413, 422) fails the check and is not re-run on that SHA; after a passing refusal (auth,
 rate limit, outage) the next pass publishes the same answer without a new model run. After a restart the
-bot's published review finishes the check without a new model run.
+bot's published review finishes the check without a new model run. At most
+`review_daily_limit` (default 20) model runs per UTC day; past it the check stays queued
+with the reason. The panel lists the guarded PRs (SHA, verdict, check title) and today's runs.
 
 The panel shows the last pass, last successful pass (UTC), consecutive failures and last
 error. `/healthz` returns 200 only when a successful pass finished less than
@@ -231,6 +233,7 @@ What the runner does not do on any input:
 | S26 | agent answers without valid JSON, or the verdict contradicts the findings | one retry in the same session; twice bad - `COMMENT` "review failed", check failure, no approval |
 | S27 | linked issue written by someone else | left out of the review prompt (R2) |
 | S28 | review agent hits a used-up plan | agent paused, check queued "paused", review runs after the pause |
+| S29 | `review_daily_limit` model runs done today | check queued "Daily review limit reached", no model run; reviewed the next UTC day |
 
 ## 8. Decisions
 

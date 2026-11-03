@@ -56,6 +56,19 @@ func (y *Yard) countStart() {
 	y.State.Started++
 }
 
+// reviewsFull tells whether today's cap of agent reviews is reached.
+func (y *Yard) reviewsFull() bool {
+	return y.Config.ReviewDailyLimit > 0 && y.State.ReviewDay == y.today() && y.State.Reviewed >= y.Config.ReviewDailyLimit
+}
+
+func (y *Yard) countReview() {
+	if day := y.today(); y.State.ReviewDay != day {
+		y.State.ReviewDay = day
+		y.State.Reviewed = 0
+	}
+	y.State.Reviewed++
+}
+
 func (y *Yard) today() string {
 	return y.now().UTC().Format(time.DateOnly)
 }
