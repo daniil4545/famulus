@@ -6,6 +6,7 @@ import (
 	"time"
 
 	"github.com/daniil4545/famulus/internal/agent"
+	"github.com/daniil4545/famulus/internal/config"
 	"github.com/daniil4545/famulus/internal/state"
 )
 
@@ -28,6 +29,18 @@ func (y *Yard) pause(ctx context.Context, t *state.Task, limit *agent.LimitError
 		}
 	}
 	return y.setStatus(ctx, t, state.Paused)
+}
+
+// pauseReviews rests the review agent like a task agent; the PR keeps its queued check and
+// is reviewed when the pause ends.
+func (y *Yard) pauseReviews(limit *agent.LimitError) {
+	wait := limit.RetryAfter
+	if wait <= 0 {
+		wait = y.Config.LimitPause
+	}
+	until := y.now().Add(wait).UTC()
+	y.State.Paused[config.Claude] = until
+	y.Log.Warn("review agent paused", "until", until, "err", limit.Message)
 }
 
 // dailyFull tells whether today's cap of new issues is reached; retries and PR notes do not count.

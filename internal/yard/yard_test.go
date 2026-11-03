@@ -8,6 +8,7 @@ import (
 	"log/slog"
 	"path/filepath"
 	"slices"
+	"strconv"
 	"strings"
 	"testing"
 	"time"
@@ -119,6 +120,7 @@ type fakeGitHub struct {
 	files   map[int][]github.PRFile
 	reviews map[int][]github.Review
 	posted  []string
+	lines   []github.ReviewComment
 	checks  []string
 }
 
@@ -206,7 +208,17 @@ func (f *fakeGitHub) Reviews(_ context.Context, _ string, n int) ([]github.Revie
 	return f.reviews[n], nil
 }
 
-func (f *fakeGitHub) CreateReview(_ context.Context, _ string, n int, sha, event, body string, _ []github.ReviewComment) error {
+func (f *fakeGitHub) Issue(_ context.Context, _ string, n int) (github.Issue, error) {
+	for _, i := range f.issues {
+		if i.Number == n {
+			return i, nil
+		}
+	}
+	return github.Issue{}, github.ErrNotFound
+}
+
+func (f *fakeGitHub) CreateReview(_ context.Context, _ string, n int, sha, event, body string, lines []github.ReviewComment) error {
+	f.lines = append(f.lines, lines...)
 	f.posted = append(f.posted, fmt.Sprintf("#%d %s %s: %s", n, sha, event, body))
 	f.reviews[n] = append(f.reviews[n], github.Review{User: github.User{Login: "bot[bot]"}, CommitID: sha, State: event})
 	return nil
@@ -246,6 +258,15 @@ func (w *fakeWork) Ahead(_ context.Context, dir, _ string) (int, error) { return
 
 func (w *fakeWork) Push(_ context.Context, _, _, branch string) error {
 	w.pushed = append(w.pushed, branch)
+	return nil
+}
+
+func (w *fakeWork) ReviewTree(_ context.Context, _, _ string, n int, _ string) (string, string, error) {
+	return filepath.Join("reviews", strconv.Itoa(n)), "+package a", nil
+}
+
+func (w *fakeWork) RemoveReview(_ context.Context, _ string, n int) error {
+	w.removed = append(w.removed, "review "+strconv.Itoa(n))
 	return nil
 }
 

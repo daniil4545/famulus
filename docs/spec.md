@@ -91,7 +91,7 @@ again among the bot's reviews after a restart. Code decides first, on the check 
 | CI of the head failed | `in_progress`, failed jobs listed | none |
 | CI of the base branch failed | `in_progress`, "<base> is red" | none |
 | files from `gate_files` changed, no `gate-change` label | `completed` failure | `REQUEST_CHANGES` |
-| otherwise | `queued`, agent review comes next | none |
+| otherwise | `queued`, then the agent review below | agent's verdict |
 
 `gate_files` (default: workflows, linter and gitleaks configs, `Makefile`, `*.mk`) protects
 CI from being weakened inside the PR it checks; a rename counts by both names. famulus
@@ -99,6 +99,19 @@ checks that the label is present, not who set it: labels need triage access, whi
 the owner holds.
 The verdict is per SHA, so a label added after `REQUEST_CHANGES` takes effect on the next
 push. An unchanged check text is not sent again.
+
+The agent review runs `claude` (model and effort from config, the run timeout) in a new
+session, in a detached worktree of the head SHA that is removed afterwards; nothing made there
+is pushed. The prompt is `rules/REVIEW.md` (the maintainer checklist and the answer format),
+the PR title and body, linked issues written by the owner (others' issues are left out, R2),
+the changed files and the diff against the base, cut at 200 KB. The final message is one JSON
+object: `verdict` approve or request_changes, `summary`, `findings` with file, line,
+severity must or should, why and scenario. The runner checks it: `request_changes` exactly
+when a must finding exists. A bad answer gets one retry in the same session; a second bad
+answer or a failed run posts a `COMMENT` "famulus review failed" and fails the check, with no
+approval and no retry until a new push. The verdict is `APPROVE` or `REQUEST_CHANGES`; a
+finding whose line is inside a diff hunk becomes a line comment, others go to the body. A
+used-up plan pauses `claude` for tasks and reviews alike; the PR stays queued until then.
 
 The panel shows the last pass, last successful pass (UTC), consecutive failures and last
 error. `/healthz` returns 200 only when a successful pass finished less than
@@ -211,6 +224,10 @@ What the runner does not do on any input:
 | S22 | owner's PR, CI pending or failed, or base red | check `famulus` waits with the reason; no review |
 | S23 | PR changes a gate file without the `gate-change` label | `REQUEST_CHANGES` and failed check, once per SHA, also after restart |
 | S24 | stranger's or draft PR | not reviewed |
+| S25 | code checks pass, agent finds a must issue | `REQUEST_CHANGES`, findings in the diff as line comments, the rest in the body, check failure |
+| S26 | agent answers without valid JSON, or the verdict contradicts the findings | one retry in the same session; twice bad - `COMMENT` "review failed", check failure, no approval |
+| S27 | linked issue written by someone else | left out of the review prompt (R2) |
+| S28 | review agent hits a used-up plan | agent paused, check queued "paused", review runs after the pause |
 
 ## 8. Decisions
 
