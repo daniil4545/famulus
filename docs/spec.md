@@ -95,7 +95,8 @@ again among the bot's reviews after a restart. Code decides first, on the check 
 
 `gate_files` (default: workflows, linter and gitleaks configs, `Makefile`, `*.mk`) protects
 CI from being weakened inside the PR it checks; a rename counts by both names. famulus
-checks that the label is present, not who set it: only the owner has write access to label.
+checks that the label is present, not who set it: labels need triage access, which only
+the owner holds.
 The verdict is per SHA, so a label added after `REQUEST_CHANGES` takes effect on the next
 push. An unchanged check text is not sent again.
 
