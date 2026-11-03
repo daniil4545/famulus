@@ -59,6 +59,7 @@ type Issue struct {
 	Number  int       `json:"number"`
 	Title   string    `json:"title"`
 	Body    string    `json:"body"`
+	User    User      `json:"user"`
 	Created time.Time `json:"created_at"`
 	Labels  []Label   `json:"labels"`
 	PR      *struct{} `json:"pull_request"`
@@ -97,6 +98,15 @@ type PullRequest struct {
 	State  string `json:"state"`
 	Merged bool   `json:"merged"`
 	URL    string `json:"html_url"`
+	Title  string `json:"title"`
+	Body   string `json:"body"`
+	Draft  bool   `json:"draft"`
+	User   User   `json:"user"`
+	Head   struct {
+		SHA string `json:"sha"`
+		Ref string `json:"ref"`
+	} `json:"head"`
+	Labels []Label `json:"labels"`
 }
 
 // Token returns an installation token for the repository, cached until 5 minutes before it
