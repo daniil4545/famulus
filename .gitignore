@@ -1,5 +1,5 @@
 .env
 .env.*
-/agentyard.toml
-/agentyard
+/famulus.toml
+/famulus
 .worktrees/

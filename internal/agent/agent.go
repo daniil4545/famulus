@@ -10,9 +10,11 @@ import (
 	"fmt"
 	"os"
 	"os/exec"
+	"regexp"
 	"strings"
+	"time"
 
-	"github.com/daniil4545/agentyard/internal/config"
+	"github.com/daniil4545/famulus/internal/config"
 )
 
 type Request struct {
@@ -20,6 +22,7 @@ type Request struct {
 	Prompt  string
 	Session string
 	Model   string
+	Effort  string
 }
 
 type Result struct {
@@ -45,19 +48,32 @@ func (c CLI) Run(ctx context.Context, name string, req Request) (Result, error) 
 }
 
 // run starts the CLI in the worktree with the runner's own secrets removed from the
-// environment: the agent needs its CLI login, not the GitHub App key.
-func (c CLI) run(ctx context.Context, name, dir, stdin string, args ...string) ([]byte, error) {
+// environment: the agent needs its CLI login, not the GitHub App key. A stderr line matching
+// stop ends the run with a LimitError: a CLI may wait silently for hours on a used-up plan.
+func (c CLI) run(ctx context.Context, name, dir, stdin string, stop *regexp.Regexp, args ...string) ([]byte, error) {
 	binary := name
 	if c.Commands[name] != "" {
 		binary = c.Commands[name]
 	}
-	cmd := exec.CommandContext(ctx, binary, args...) //nolint:gosec // a known agent CLI, arguments built by the runner
+	runCtx, cancel := context.WithCancel(ctx)
+	defer cancel()
+	cmd := exec.CommandContext(runCtx, binary, args...) //nolint:gosec // a known agent CLI, arguments built by the runner
 	cmd.Dir = dir
 	cmd.Stdin = strings.NewReader(stdin)
 	cmd.Env = agentEnv(os.Environ())
-	var stdout, stderr bytes.Buffer
-	cmd.Stdout, cmd.Stderr = &stdout, &stderr
+	// children of a killed CLI may hold its pipes open
+	cmd.WaitDelay = 2 * time.Second
+	var stdout bytes.Buffer
+	stderr := &stopWatch{stop: stop, cancel: cancel}
+	cmd.Stdout, cmd.Stderr = &stdout, stderr
 	err := cmd.Run()
+	if stderr.hit != "" {
+		msg := stderr.hit
+		if m := logError.FindStringSubmatch(msg); m != nil {
+			msg = m[1]
+		}
+		return stdout.Bytes(), &LimitError{Agent: name, Message: tail(msg)}
+	}
 	if ctx.Err() != nil {
 		return stdout.Bytes(), fmt.Errorf("%s: %w", name, ctx.Err())
 	}
@@ -67,10 +83,48 @@ func (c CLI) run(ctx context.Context, name, dir, stdin string, args ...string) (
 	return stdout.Bytes(), nil
 }
 
+// logError picks the error text out of a key=value log line: error.error="...".
+var logError = regexp.MustCompile(`error\.error="([^"]*)"`)
+
+// stopWatch keeps stderr and cancels the run at the first complete line matching stop.
+// exec writes stderr from one goroutine and Run waits for it, so no lock is needed.
+type stopWatch struct {
+	stop   *regexp.Regexp
+	cancel func()
+	all    bytes.Buffer
+	part   []byte
+	hit    string
+}
+
+func (w *stopWatch) Write(p []byte) (int, error) {
+	w.all.Write(p)
+	if w.stop == nil || w.hit != "" {
+		return len(p), nil
+	}
+	w.part = append(w.part, p...)
+	for {
+		i := bytes.IndexByte(w.part, '\n')
+		if i < 0 {
+			return len(p), nil
+		}
+		line := string(w.part[:i])
+		w.part = w.part[i+1:]
+		if w.stop.MatchString(line) {
+			w.hit = line
+			w.cancel()
+			return len(p), nil
+		}
+	}
+}
+
+func (w *stopWatch) String() string {
+	return w.all.String()
+}
+
 func agentEnv(env []string) []string {
 	var kept []string
 	for _, kv := range env {
-		if !strings.HasPrefix(kv, "AGENTYARD_") {
+		if !strings.HasPrefix(kv, "FAMULUS_") {
 			kept = append(kept, kv)
 		}
 	}

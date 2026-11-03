@@ -5,16 +5,17 @@ package yard
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"log/slog"
 	"regexp"
 	"strings"
 	"time"
 
-	"github.com/daniil4545/agentyard/internal/agent"
-	"github.com/daniil4545/agentyard/internal/config"
-	"github.com/daniil4545/agentyard/internal/github"
-	"github.com/daniil4545/agentyard/internal/state"
+	"github.com/daniil4545/famulus/internal/agent"
+	"github.com/daniil4545/famulus/internal/config"
+	"github.com/daniil4545/famulus/internal/github"
+	"github.com/daniil4545/famulus/internal/state"
 )
 
 type GitHub interface {
@@ -47,9 +48,21 @@ type Yard struct {
 	Agents Runner
 	State  *state.Store
 	Log    *slog.Logger
+	// Clock replaces time.Now in tests.
+	Clock func() time.Time
+	// Passed, when set, hears the end of every pass.
+	Passed func(time.Time)
 }
 
 const leftoverMessage = "chore: commit changes the agent left uncommitted"
+
+const maxNudges = 2
+
+var (
+	// questions is how the rules make an agent ask: a Markdown heading "Questions".
+	questions  = regexp.MustCompile(`(?mi)^#+\s*questions\b`)
+	errStopped = errors.New("the agent stopped without a result twice after a nudge: no commits and no questions")
+)
 
 // Run makes a pass every interval until the context ends.
 func (y *Yard) Run(ctx context.Context) {
@@ -75,11 +88,14 @@ func (y *Yard) Pass(ctx context.Context) {
 			y.Log.Error("pass failed", "repo", repo.Name, "err", err)
 		}
 	}
+	if y.Passed != nil {
+		y.Passed(y.now())
+	}
 }
 
 func (y *Yard) passRepo(ctx context.Context, repo config.Repo) error {
 	for _, t := range y.State.Tasks {
-		if t.Repo == repo.Name && t.Status == state.Review {
+		if t.Repo == repo.Name && t.Status == state.Review && !y.paused(t.Agent) {
 			if err := y.followPR(ctx, repo, t); err != nil {
 				y.Log.Error("follow pr failed", "task", state.Key(t.Repo, t.Issue), "pr", t.PR, "err", err)
 			}
@@ -91,19 +107,25 @@ func (y *Yard) passRepo(ctx context.Context, repo config.Repo) error {
 	}
 	for _, issue := range issues {
 		t := y.State.Tasks[state.Key(repo.Name, issue.Number)]
+		name := y.agentFor(repo, issue)
+		if t != nil {
+			name = t.Agent
+		}
 		var err error
 		switch {
-		case issue.HasLabel(y.label(state.Failed)), issue.HasLabel(y.label(state.Done)):
+		case issue.HasLabel(y.label(state.Failed)), issue.HasLabel(y.label(state.Done)), y.paused(name):
 			continue
 		case t != nil && t.Status == state.Review:
 			continue
 		case t != nil && t.Status == state.Blocked:
 			err = y.followIssue(ctx, repo, t)
+		case t == nil && y.dailyFull():
+			continue
 		case t != nil && t.PR != 0:
 			// a failed or interrupted run on an open PR: the next pass follows the PR again
 			err = y.setStatus(ctx, t, state.Review)
 		default:
-			// new, failed and then unlabeled by the owner, or cut short by a restart
+			// new, failed and then unlabeled by the owner, paused, or cut short by a restart
 			err = y.start(ctx, repo, issue)
 		}
 		if err != nil {
@@ -121,6 +143,12 @@ func (y *Yard) start(ctx context.Context, repo config.Repo, issue github.Issue) 
 		Agent:  y.agentFor(repo, issue),
 		Branch: branchName(issue),
 		Since:  issue.Created,
+	}
+	if prev := y.State.Tasks[state.Key(t.Repo, t.Issue)]; prev != nil {
+		t.Status = prev.Status // so the old status label goes away
+		t.PauseNoted = prev.PauseNoted
+	} else {
+		y.countStart()
 	}
 	y.State.Tasks[state.Key(t.Repo, t.Issue)] = t
 	if err := y.setStatus(ctx, t, state.Working); err != nil {
@@ -190,7 +218,10 @@ func (y *Yard) work(ctx context.Context, repo config.Repo, t *state.Task, prompt
 	if err != nil {
 		return y.fail(ctx, t, err)
 	}
-	res, err := y.runAgent(ctx, t, dir, prompt, repo)
+	res, head, err := y.runToResult(ctx, t, dir, prompt, headBefore, repo)
+	if limit, ok := errors.AsType[*agent.LimitError](err); ok {
+		return y.pause(ctx, t, limit)
+	}
 	if err != nil {
 		return y.fail(ctx, t, err)
 	}
@@ -198,13 +229,6 @@ func (y *Yard) work(ctx context.Context, repo config.Repo, t *state.Task, prompt
 		if n.Created.After(t.Since) {
 			t.Since = n.Created
 		}
-	}
-	if _, err := y.Work.CommitLeftovers(ctx, dir, leftoverMessage); err != nil {
-		return y.fail(ctx, t, err)
-	}
-	head, err := y.Work.Head(ctx, dir)
-	if err != nil {
-		return y.fail(ctx, t, err)
 	}
 	ahead, err := y.Work.Ahead(ctx, dir, repo.Base)
 	if err != nil {
@@ -239,11 +263,38 @@ func (y *Yard) work(ctx context.Context, repo config.Repo, t *state.Task, prompt
 	}
 }
 
+// runToResult runs the agent and commits what it left. Before a pull request exists, a run with
+// no commits and no questions gets the same session back up to maxNudges times: small models
+// often end their turn mid-task.
+func (y *Yard) runToResult(ctx context.Context, t *state.Task, dir, prompt, headBefore string, repo config.Repo) (agent.Result, string, error) {
+	for nudge := 0; ; nudge++ {
+		res, err := y.runAgent(ctx, t, dir, prompt, repo)
+		if err != nil {
+			return res, "", err
+		}
+		if _, err := y.Work.CommitLeftovers(ctx, dir, leftoverMessage); err != nil {
+			return res, "", fmt.Errorf("commit leftovers: %w", err)
+		}
+		head, err := y.Work.Head(ctx, dir)
+		if err != nil {
+			return res, "", fmt.Errorf("read head: %w", err)
+		}
+		if t.PR != 0 || head != headBefore || questions.MatchString(res.Text) {
+			return res, head, nil
+		}
+		if nudge == maxNudges {
+			return res, "", errStopped
+		}
+		y.Log.Info("agent stopped without a result, nudging", "task", state.Key(t.Repo, t.Issue), "nudge", nudge+1)
+		prompt = nudgePrompt
+	}
+}
+
 // runAgent resumes the session when there is one; a resume that fails, for example after the
 // session store was lost, falls back to a new session with the full context.
 func (y *Yard) runAgent(ctx context.Context, t *state.Task, dir, prompt string, repo config.Repo) (agent.Result, error) {
 	key := state.Key(t.Repo, t.Issue)
-	req := agent.Request{Dir: dir, Prompt: prompt, Session: t.Session, Model: y.Config.Models[t.Agent]}
+	req := agent.Request{Dir: dir, Prompt: prompt, Session: t.Session, Model: y.Config.Models[t.Agent], Effort: y.Config.Effort[t.Agent]}
 	if t.Session == "" && !strings.HasPrefix(prompt, rules) {
 		req.Prompt = rules + "\n\n" + restartPrompt(repo, t) + "\n\n" + prompt
 	}
@@ -252,7 +303,8 @@ func (y *Yard) runAgent(ctx context.Context, t *state.Task, dir, prompt string, 
 	started := time.Now()
 	y.Log.Info("agent started", "task", key, "agent", t.Agent, "session", t.Session)
 	res, err := y.Agents.Run(runCtx, t.Agent, req)
-	if err != nil && t.Session != "" && ctx.Err() == nil {
+	_, limited := errors.AsType[*agent.LimitError](err)
+	if err != nil && !limited && t.Session != "" && ctx.Err() == nil {
 		y.Log.Warn("resume failed, starting a new session", "task", key, "err", err)
 		req.Session = ""
 		req.Prompt = rules + "\n\n" + restartPrompt(repo, t) + "\n\n" + prompt
@@ -269,7 +321,12 @@ func (y *Yard) runAgent(ctx context.Context, t *state.Task, dir, prompt string, 
 }
 
 func (y *Yard) fail(ctx context.Context, t *state.Task, cause error) error {
-	msg := fmt.Sprintf("agentyard could not finish this run: %s\n\nRemove the `%s` label to try again.%s",
+	if ctx.Err() != nil {
+		// the runner is stopping: the task stays as it is and restarts on the next start
+		y.Log.Warn("run interrupted", "task", state.Key(t.Repo, t.Issue), "err", cause)
+		return cause
+	}
+	msg := fmt.Sprintf("famulus could not finish this run: %s\n\nRemove the `%s` label to try again.%s",
 		cause, y.label(state.Failed), footer(t))
 	if err := y.GitHub.Comment(ctx, t.Repo, t.Issue, msg); err != nil {
 		y.Log.Warn("failure comment", "task", state.Key(t.Repo, t.Issue), "err", err)
@@ -284,6 +341,10 @@ func (y *Yard) fail(ctx context.Context, t *state.Task, cause error) error {
 func (y *Yard) setStatus(ctx context.Context, t *state.Task, status state.Status) error {
 	prev := t.Status
 	t.Status = status
+	t.Updated = y.now().UTC()
+	if status == state.Review || status == state.Blocked {
+		t.PauseNoted = false
+	}
 	if err := y.State.Save(); err != nil {
 		return fmt.Errorf("save state: %w", err)
 	}
@@ -353,5 +414,8 @@ func branchName(issue github.Issue) string {
 }
 
 func footer(t *state.Task) string {
-	return fmt.Sprintf("\n\n---\n<sub>agentyard · %s · session `%s`</sub>", t.Agent, t.Session)
+	if t.Session == "" {
+		return fmt.Sprintf("\n\n---\n<sub>famulus · %s</sub>", t.Agent)
+	}
+	return fmt.Sprintf("\n\n---\n<sub>famulus · %s · session `%s`</sub>", t.Agent, t.Session)
 }

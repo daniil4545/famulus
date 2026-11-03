@@ -1,17 +1,20 @@
-name: agentyard
+name: famulus
 
 services:
-  agentyard:
+  famulus:
     build: .
-    image: agentyard:local
+    image: famulus:local
     restart: unless-stopped
     environment:
-      AGENTYARD_APP_ID: ${AGENTYARD_APP_ID:?set through envkey}
-      AGENTYARD_APP_KEY_B64: ${AGENTYARD_APP_KEY_B64:?set through envkey}
+      FAMULUS_APP_ID: ${FAMULUS_APP_ID:?set through envkey}
+      FAMULUS_APP_KEY_B64: ${FAMULUS_APP_KEY_B64:?set through envkey}
       # Optional logins; empty means that agent is not used.
       CLAUDE_CODE_OAUTH_TOKEN: ${CLAUDE_CODE_OAUTH_TOKEN:-}
+    ports:
+      # admin panel, local only
+      - 127.0.0.1:8080:8080
     volumes:
-      - ./agentyard.toml:/etc/agentyard/agentyard.toml:ro
+      - ./famulus.toml:/etc/famulus/famulus.toml:ro
       - work:/work
       # CLI logins and agent sessions survive restarts: ~/.codex, ~/.claude, opencode data.
       - home:/home/node

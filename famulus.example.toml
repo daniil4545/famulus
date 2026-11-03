@@ -1,4 +1,4 @@
-# Copy to agentyard.toml next to compose.yaml.
+# Copy to famulus.toml next to compose.yaml.
 
 # GitHub login whose labels and comments the runner obeys. Nobody else's text reaches an agent.
 owner = "daniil4545"
@@ -8,6 +8,8 @@ label = "agent"
 
 interval = "60s"   # pause between passes
 timeout = "60m"    # one agent run
+limit_pause = "1h" # rest after a used-up plan when the provider names no time
+daily_limit = 5    # new issues started per UTC day; 0 turns the cap off
 work_dir = "/work" # clones, worktrees and state.json, a Docker volume
 
 # Default agent: opencode, claude or codex. An issue label agent:<name> overrides it.
@@ -17,8 +19,12 @@ agent = "opencode"
 # Free OpenCode Zen model, works without a key.
 opencode = "opencode/glm-5.3-flash-free"
 # Empty means the CLI's default model.
-claude = ""
+claude = "claude-sonnet-5-5"
 codex = ""
+
+[effort]
+# Reasoning effort: low, medium, high, xhigh or max; only claude takes it. Leave the key out for the CLI's default.
+claude = "medium"
 
 [[repos]]
 name = "daniil4545/admitd-lab"

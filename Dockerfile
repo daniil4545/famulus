@@ -4,7 +4,7 @@ WORKDIR /src
 COPY go.mod go.sum ./
 RUN go mod download
 COPY . .
-RUN CGO_ENABLED=0 go build -trimpath -o /out/agentyard ./cmd/agentyard
+RUN CGO_ENABLED=0 go build -trimpath -o /out/famulus ./cmd/famulus
 
 # Runtime: the runner plus the agent CLIs and the toolchains the watched projects need.
 FROM node:22-bookworm-slim
@@ -19,7 +19,7 @@ RUN curl -fsSL "https://github.com/golangci/golangci-lint/releases/download/v${G
     | tar -xz -C /usr/local/bin --strip-components=1 "golangci-lint-${GOLANGCI_LINT}-linux-${TARGETARCH}/golangci-lint"
 RUN npm install -g @anthropic-ai/claude-code@2.1.310 @openai/codex@0.164.0 opencode-ai@1.19.4 \
     && npm cache clean --force
-COPY --from=build /out/agentyard /usr/local/bin/agentyard
+COPY --from=build /out/famulus /usr/local/bin/famulus
 COPY docker/opencode.json /home/node/.config/opencode/opencode.json
 
 ENV PATH=/home/node/go/bin:/usr/local/go/bin:$PATH \
@@ -28,4 +28,4 @@ RUN mkdir -p /work && chown -R node:node /work /home/node
 # Claude Code refuses to skip permissions as root; the agents run as the image's node user.
 USER node
 WORKDIR /work
-ENTRYPOINT ["agentyard", "-config", "/etc/agentyard/agentyard.toml"]
+ENTRYPOINT ["famulus", "-config", "/etc/famulus/famulus.toml"]

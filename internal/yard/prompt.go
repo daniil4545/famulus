@@ -4,10 +4,10 @@ import (
 	"fmt"
 	"strings"
 
-	"github.com/daniil4545/agentyard/internal/config"
-	"github.com/daniil4545/agentyard/internal/github"
-	"github.com/daniil4545/agentyard/internal/state"
-	agentrules "github.com/daniil4545/agentyard/rules"
+	"github.com/daniil4545/famulus/internal/config"
+	"github.com/daniil4545/famulus/internal/github"
+	"github.com/daniil4545/famulus/internal/state"
+	agentrules "github.com/daniil4545/famulus/rules"
 )
 
 var rules = strings.TrimSpace(agentrules.Text)
@@ -19,7 +19,13 @@ const ending = `## How this run ends
 - Your final message is posted to GitHub as it is, in Markdown.
   - With new commits it becomes the pull request description or a reply on the pull request.
   - Without commits it becomes a comment on the issue. Use that to ask the maintainer what
-    you need when the issue does not give enough to do the work.`
+    you need when the issue does not give enough to do the work, under a ` + "`## Questions`" + ` heading.
+  - A run without commits and without ` + "`## Questions`" + ` counts as unfinished: you get it back.`
+
+// nudgePrompt goes back to a session that ended its turn with no commits and no questions.
+const nudgePrompt = "You ended your turn before the task was done: no commits and no `## Questions`. " +
+	"Continue from where you stopped. Finish with commits and the final message in the form the rules give, " +
+	"or, if you are blocked, with a `## Questions` section and no commits."
 
 func issuePrompt(repo config.Repo, issue github.Issue, notes []github.Note, branch string) string {
 	var b strings.Builder

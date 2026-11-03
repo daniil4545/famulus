@@ -1,4 +1,4 @@
-# agentyard - context for AI agents
+# famulus - context for AI agents
 
 ## Project
 
@@ -9,7 +9,7 @@ runner gives to its own agents are `rules/AGENTS.md`.
 
 ## Stack
 
-Go, one binary `cmd/agentyard`, one dependency (BurntSushi/toml). GitHub through REST with
+Go, one binary `cmd/famulus`, one dependency (BurntSushi/toml). GitHub through REST with
 `net/http`, git and the agent CLIs through `os/exec`. Docker image: `Dockerfile`, `compose.yaml`.
 
 ## Structure
@@ -30,7 +30,7 @@ an interface; nothing imports `yard` but `cmd`.
 
 - Spec first: a change of behaviour updates `docs/spec.md` (states, scenarios S*, boundaries R*).
 - Boundaries R1-R5 of the spec have tests; keep them green and add one for a new boundary.
-- The agent process never gets `AGENTYARD_*` variables or a GitHub token.
+- The agent process never gets `FAMULUS_*` variables or a GitHub token.
 - Agent CLI output is untrusted: parse it defensively, a fixture in `internal/agent/testdata`
   for every new format, from a live run.
 - Commits: conventional, English, no mentions of AI tools.

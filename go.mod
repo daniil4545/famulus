@@ -1,4 +1,4 @@
-module github.com/daniil4545/agentyard
+module github.com/daniil4545/famulus
 
 go 1.27.3
 
