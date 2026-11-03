@@ -1,7 +1,7 @@
 name: ci
 
 # GitHub flow: every PR into main and every push to main run the checks; `gate` is the one
-# required check of main and is red when any job fails or is cancelled.
+# required check of main and is red unless every job succeeded.
 on:
   push:
     branches: [main]
@@ -50,5 +50,5 @@ jobs:
         run: |
           echo "results: $RESULTS"
           for r in $RESULTS; do
-            case "$r" in success|skipped) ;; *) exit 1 ;; esac
+            case "$r" in success) ;; *) exit 1 ;; esac
           done
