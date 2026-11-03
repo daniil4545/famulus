@@ -35,8 +35,8 @@ Issue labels show the state:
 
 Requirements: Docker, a GitHub App, `envkey` or another way to pass environment variables.
 
-1. Create a GitHub App: permissions Contents, Issues and Pull requests read and write,
-   Metadata read; webhook off. Generate a private key and install the App on the
+1. Create a GitHub App: permissions Contents, Issues, Pull requests and Checks read and write,
+   Commit statuses and Metadata read; webhook off. Generate a private key and install the App on the
    repositories to watch.
 2. Put its id and key into `.env`:
    `envkey set --public FAMULUS_APP_ID <id>` and

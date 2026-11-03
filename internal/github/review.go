@@ -214,6 +214,9 @@ func (c *Client) UpsertCheck(ctx context.Context, repo, sha string, check Check)
 		(check.Status != "completed" && check.Conclusion != "") {
 		return errors.New("invalid check conclusion")
 	}
+	if check.Title == "" || check.Summary == "" {
+		return errors.New("check output needs a title and a summary") // GitHub answers 422 otherwise
+	}
 	q := url.Values{"check_name": {"famulus"}, "app_id": {c.appID}, "filter": {"latest"}}
 	runs, err := c.checkRuns(ctx, repo, sha, q)
 	if err != nil {
