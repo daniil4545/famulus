@@ -276,3 +276,22 @@ func TestPassingRefusalKeepsAnswer(t *testing.T) {
 		t.Fatalf("model runs = %d, posted = %q", calls, gh.posted)
 	}
 }
+
+// The daily cap of agent reviews holds the PR queued without a model run until the next UTC day.
+func TestReviewDailyLimit(t *testing.T) {
+	gh := newGitHub()
+	gh.open = []github.PullRequest{ownerPR(7, "s1"), ownerPR(8, "s2")}
+	y := reviewYard(t, gh)
+	now := t0
+	y.Clock = func() time.Time { return now }
+	y.Config.ReviewDailyLimit = 1
+	y.Pass(t.Context())
+	if calls := len(y.Agents.(*fakeAgents).calls); calls != 1 || gh.checks[len(gh.checks)-1] != "s2 queued : Daily review limit reached" {
+		t.Fatalf("calls = %d, checks = %q", calls, gh.checks)
+	}
+	now = now.Add(24 * time.Hour)
+	y.Pass(t.Context())
+	if len(gh.posted) != 2 {
+		t.Fatalf("not reviewed next day: %q", gh.posted)
+	}
+}

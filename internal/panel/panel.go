@@ -9,6 +9,7 @@ import (
 	"log/slog"
 	"net/http"
 	"slices"
+	"strconv"
 	"strings"
 	"sync"
 	"time"
@@ -95,6 +96,12 @@ type row struct {
 	updated                              time.Time
 }
 
+type reviewRow struct {
+	Key, Repo, SHA, Verdict, Check, Age string
+	PR                                  int
+	at                                  time.Time
+}
+
 type count struct {
 	Status string
 	N      int
@@ -106,6 +113,8 @@ type page struct {
 	Counts                                     []count
 	Paused                                     map[string]string
 	Rows                                       []row
+	Reviews                                    []reviewRow
+	ReviewedToday                              int
 	Log                                        []string
 }
 
@@ -173,11 +182,31 @@ func (p *Panel) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		}
 		return strings.Compare(a.Key, b.Key)
 	})
+	pg.Reviews, pg.ReviewedToday = reviews(store, now)
 	slices.Reverse(pg.Log)
 	w.Header().Set("Content-Type", "text/html; charset=utf-8")
 	if err := tmpl.Execute(w, pg); err != nil {
 		p.Logger.Warn("panel: render", "err", err)
 	}
+}
+
+// reviews lists the guarded pull requests, the latest decision first, at most 20.
+func reviews(store *state.Store, now time.Time) ([]reviewRow, int) {
+	var rows []reviewRow
+	for key, r := range store.Reviews {
+		repo, number, _ := strings.Cut(key, "#")
+		pr, _ := strconv.Atoi(number)
+		// the check text is "status conclusion: title\nsummary"; the title is enough here
+		check, _, _ := strings.Cut(r.Check, "\n")
+		_, title, _ := strings.Cut(check, ": ")
+		rows = append(rows, reviewRow{Key: key, Repo: repo, PR: pr, SHA: r.SHA[:min(7, len(r.SHA))], Verdict: r.Verdict, Check: title, Age: age(now.Sub(r.At)), at: r.At})
+	}
+	slices.SortFunc(rows, func(a, b reviewRow) int { return b.at.Compare(a.at) })
+	today := 0
+	if store.ReviewDay == now.UTC().Format(time.DateOnly) {
+		today = store.Reviewed
+	}
+	return rows[:min(20, len(rows))], today
 }
 
 func serveHealth(w http.ResponseWriter, lastGood, now time.Time) {
@@ -224,6 +253,11 @@ pre{font:12px/1.4 ui-monospace,monospace;white-space:pre-wrap;word-break:break-a
 <td>{{.Status}}</td><td class="mut">{{.Age}}</td><td class="mut">{{.Agent}}</td>
 <td>{{if .PR}}<a href="https://github.com/{{.Repo}}/pull/{{.PR}}">PR #{{.PR}}</a>{{end}}</td></tr>
 {{else}}<tr><td class="mut">no tasks yet</td></tr>{{end}}</table>
+<h2>Reviews · {{.ReviewedToday}} agent runs today</h2>
+<table>{{range .Reviews}}<tr>
+<td><a href="https://github.com/{{.Repo}}/pull/{{.PR}}">{{.Key}}</a></td><td class="mut">{{.SHA}}</td>
+<td>{{.Verdict}}</td><td>{{.Check}}</td><td class="mut">{{.Age}}</td></tr>
+{{else}}<tr><td class="mut">no reviews yet</td></tr>{{end}}</table>
 <h2>Log, newest first</h2>
 <pre>{{range .Log}}{{.}}
 {{end}}</pre>
