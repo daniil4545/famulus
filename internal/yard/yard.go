@@ -392,6 +392,7 @@ func (y *Yard) fail(ctx context.Context, t *state.Task, cause error) error {
 	}
 	if err := y.setStatus(ctx, t, state.Failed); err != nil {
 		y.Log.Warn("failure label", "task", state.Key(t.Repo, t.Issue), "err", err)
+		reported = false
 	}
 	if reported {
 		return &reportedTaskError{err: cause}
