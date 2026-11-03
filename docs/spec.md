@@ -128,6 +128,17 @@ pause end of each agent and the count of new issues started on the current UTC d
 | `internal/panel` | read-only admin page on `panel` (default `:8080`): health, tasks from `state.json`, last log lines |
 | `rules/AGENTS.md` | rules every first prompt starts with |
 
+The GitHub client also exposes reviewer primitives; the runner does not call them yet.
+It lists open PRs filtered by base, issue details, PR files (up to GitHub's 3000-file cap)
+and reviews, with pagination. Local issue links come from case-insensitive
+`Closes|Fixes|Resolves #N` in the PR body, deduplicated in order; no GraphQL lookup.
+For either a PR head or base SHA, CI combines latest check runs (excluding a supplied
+check name) and latest legacy statuses per context. Failure takes precedence over pending;
+no remaining results means pending. Completed neutral and skipped checks count as success.
+Review writes pin `commit_id`, accept APPROVE, REQUEST_CHANGES or COMMENT and optional
+RIGHT-side line comments. A `famulus` check is created or updated on the supplied SHA with
+queued, in_progress or completed status, success/failure conclusion and title/summary.
+
 ## 5. Agents
 
 | Agent | New run | Resume | Login |
@@ -151,6 +162,7 @@ What the runner does not do on any input:
 - R3. Never merges, never pushes to the base branch, never force-pushes.
 - R4. One agent at a time; a run is cut at `timeout`.
 - R5. Gives the agent no GitHub token and no App key.
+- R6. Updates only `famulus` check runs belonging to the configured GitHub App.
 
 ## 7. Scenarios
 
@@ -176,6 +188,7 @@ What the runner does not do on any input:
 | S18 | GitHub unreachable throughout a qualifying outage | open and immediately close an outage issue on recovery |
 | S19 | startup, or last successful pass at least five minutes ago | `/healthz` returns 503; fresh success returns 200; panel shows health |
 | S20 | error contains credentials or arbitrary agent output | public alert contains only a safe cause category |
+| S21 | another App has a `famulus` check on the same SHA | create our own check; later updates address only our App's check (R6) |
 
 ## 8. Decisions
 
