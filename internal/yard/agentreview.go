@@ -73,6 +73,9 @@ func (y *Yard) agentReview(ctx context.Context, repo config.Repo, pr github.Pull
 	}()
 	// every model run counts, a failed one too: the cap is about cost
 	y.countReview()
+	if err := y.State.Save(); err != nil {
+		return fmt.Errorf("save state: %w", err)
+	}
 	ans, err := y.askReviewer(ctx, dir, prompt+"\n\n## Diff\n\n```diff\n"+diff+"\n```\n")
 	if limit, ok := errors.AsType[*agent.LimitError](err); ok {
 		y.pauseReviews(limit)
