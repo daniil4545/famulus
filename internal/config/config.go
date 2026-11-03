@@ -31,9 +31,10 @@ type Config struct {
 	DailyLimit int    `toml:"daily_limit"`
 	WorkDir    string `toml:"work_dir"`
 	// Panel is the listen address of the admin page; empty turns it off.
-	Panel  string            `toml:"panel"`
-	Agent  string            `toml:"agent"`
-	Models map[string]string `toml:"models"`
+	Panel     string            `toml:"panel"`
+	AlertRepo string            `toml:"alert_repo"`
+	Agent     string            `toml:"agent"`
+	Models    map[string]string `toml:"models"`
 	// Effort is the reasoning effort per agent; only the claude CLI takes it as a flag.
 	Effort map[string]string `toml:"effort"`
 	Repos  []Repo            `toml:"repos"`

@@ -5,6 +5,11 @@ services:
     build: .
     image: famulus:local
     restart: unless-stopped
+    healthcheck:
+      test: ["CMD", "curl", "--fail", "--silent", "--max-time", "5", "http://127.0.0.1:8080/healthz"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
     environment:
       FAMULUS_APP_ID: ${FAMULUS_APP_ID:?set through envkey}
       FAMULUS_APP_KEY_B64: ${FAMULUS_APP_KEY_B64:?set through envkey}

@@ -67,13 +67,14 @@ func run() error {
 	}
 	health := panel.NewHealth(time.Now())
 	y := &yard.Yard{
-		Config: cfg,
-		GitHub: gh,
-		Work:   workspace.New(cfg.WorkDir, "https://github.com/", gh.Token, name, email),
-		Agents: agent.CLI{},
-		State:  store,
-		Log:    log,
-		Passed: health.Passed,
+		Config:  cfg,
+		GitHub:  gh,
+		Work:    workspace.New(cfg.WorkDir, "https://github.com/", gh.Token, name, email),
+		Agents:  agent.CLI{},
+		State:   store,
+		Log:     log,
+		Passed:  health.Passed,
+		Alerted: health.Alerted,
 	}
 	log.Info("famulus started", "bot", name, "owner", cfg.Owner, "repos", len(cfg.Repos), "interval", cfg.Interval)
 	if *once {

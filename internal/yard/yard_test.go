@@ -1,6 +1,7 @@
 package yard
 
 import (
+	"bytes"
 	"context"
 	"errors"
 	"log/slog"
@@ -15,6 +16,84 @@ import (
 	"github.com/daniil4545/famulus/internal/github"
 	"github.com/daniil4545/famulus/internal/state"
 )
+
+type failingGitHub struct {
+	*fakeGitHub
+	failRepo, failPR bool
+}
+
+type cancelAfterList struct {
+	*fakeGitHub
+	cancel context.CancelFunc
+}
+
+func (g *cancelAfterList) OpenIssues(context.Context, string, string) ([]github.Issue, error) {
+	g.cancel()
+	return nil, nil
+}
+
+func TestCancellationCannotReportSuccess(t *testing.T) {
+	y, _, _ := newYard(t, newGitHub())
+	ctx, cancel := context.WithCancel(t.Context())
+	defer cancel()
+	y.GitHub = &cancelAfterList{fakeGitHub: newGitHub(), cancel: cancel}
+	called := false
+	y.Passed = func(_ time.Time, errs int, last error) {
+		called = true
+		if errs == 0 || last == nil {
+			t.Errorf("interrupted pass reported success: errors=%d last=%v", errs, last)
+		}
+	}
+	y.Pass(ctx)
+	if !called {
+		t.Fatal("no pass report")
+	}
+}
+
+func (f *failingGitHub) OpenIssues(ctx context.Context, repo, label string) ([]github.Issue, error) {
+	if f.failRepo {
+		return nil, errors.New("DNS failure")
+	}
+	return f.fakeGitHub.OpenIssues(ctx, repo, label)
+}
+
+func (f *failingGitHub) PR(context.Context, string, int) (github.PullRequest, error) {
+	if f.failPR {
+		return github.PullRequest{}, errors.New("PR unavailable")
+	}
+	return github.PullRequest{}, nil
+}
+
+func TestPassReportsEveryErrorSource(t *testing.T) {
+	for _, source := range []string{"repo", "pr", "issue"} {
+		t.Run(source, func(t *testing.T) {
+			gh := newGitHub()
+			y, _, agents := newYard(t, gh)
+			y.GitHub = &failingGitHub{fakeGitHub: gh, failRepo: source == "repo", failPR: source == "pr"}
+			if source == "pr" {
+				y.State.Tasks["o/r#1"] = &state.Task{Repo: "o/r", Issue: 1, PR: 10, Status: state.Review}
+			}
+			if source == "issue" {
+				gh.issues = []github.Issue{issue(1, "one")}
+				agents.next = func(agent.Request) (int, string, error) { return 0, "", errors.New("agent unavailable") }
+			}
+			var log bytes.Buffer
+			y.Log = slog.New(slog.NewTextHandler(&log, nil))
+			called := false
+			y.Passed = func(_ time.Time, errs int, last error) {
+				called = true
+				if errs != 1 || last == nil {
+					t.Errorf("pass: errors=%d last=%v", errs, last)
+				}
+			}
+			y.Pass(t.Context())
+			if !called || strings.Count(log.String(), `msg="pass done"`) != 1 || !strings.Contains(log.String(), "errors=1") || !strings.Contains(log.String(), "duration=") {
+				t.Fatalf("log: %s", log.String())
+			}
+			t.Log(strings.TrimSpace(log.String()))
+		})
+	}
+}
 
 var t0 = time.Date(2026, 10, 25, 10, 0, 0, 0, time.UTC)
 
@@ -80,6 +159,14 @@ func (f *fakeGitHub) CreatePR(_ context.Context, _, head, base, title, body stri
 
 func (f *fakeGitHub) PR(_ context.Context, _ string, n int) (github.PullRequest, error) {
 	return f.prs[n], nil
+}
+
+func (f *fakeGitHub) CreateIssue(context.Context, string, string, string, []string) (github.Issue, error) {
+	return github.Issue{}, errors.New("unexpected alert creation")
+}
+
+func (f *fakeGitHub) CloseIssue(context.Context, string, int) error {
+	return errors.New("unexpected alert closure")
 }
 
 // fakeWork models a branch as a commit counter; the fake agent adds commits.
