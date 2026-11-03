@@ -122,8 +122,9 @@ type fakeGitHub struct {
 	posted  []string
 	lines   []github.ReviewComment
 	// refuse, when set, fails CreateReview for a review with that many line comments or more
-	refuse *int
-	checks []string
+	refuse       *int
+	refuseStatus int // 422 when zero
+	checks       []string
 }
 
 func newGitHub(issues ...github.Issue) *fakeGitHub {
@@ -221,7 +222,11 @@ func (f *fakeGitHub) Issue(_ context.Context, _ string, n int) (github.Issue, er
 
 func (f *fakeGitHub) CreateReview(_ context.Context, _ string, n int, sha, event, body string, lines []github.ReviewComment) error {
 	if f.refuse != nil && len(lines) >= *f.refuse {
-		return &github.HTTPError{Status: 422}
+		status := f.refuseStatus
+		if status == 0 {
+			status = 422
+		}
+		return &github.HTTPError{Status: status}
 	}
 	f.lines = append(f.lines, lines...)
 	f.posted = append(f.posted, fmt.Sprintf("#%d %s %s: %s", n, sha, event, body))

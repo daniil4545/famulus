@@ -14,6 +14,7 @@ import (
 	"github.com/daniil4545/famulus/internal/agent"
 	"github.com/daniil4545/famulus/internal/config"
 	"github.com/daniil4545/famulus/internal/github"
+	"github.com/daniil4545/famulus/internal/state"
 	agentrules "github.com/daniil4545/famulus/rules"
 )
 
@@ -47,6 +48,10 @@ func (y *Yard) agentReview(ctx context.Context, repo config.Repo, pr github.Pull
 		event, title := givenEvents[given][0], givenEvents[given][1]
 		return y.verdict(ctx, repo, pr, event, "Review already published on this commit.", title, nil)
 	}
+	cached := state.Key(repo.Name, pr.Number) + "@" + pr.Head.SHA
+	if ans, ok := y.answers[cached]; ok {
+		return y.publishOnce(ctx, repo, pr, ans, files, cached)
+	}
 	prompt, err := y.reviewPrompt(ctx, repo, pr, files)
 	if err != nil {
 		return err
@@ -77,7 +82,21 @@ func (y *Yard) agentReview(ctx context.Context, repo config.Repo, pr github.Pull
 		}
 		return y.verdict(ctx, repo, pr, "COMMENT", "famulus review failed: "+reason+". Push a new commit to retry.", "Review failed", nil)
 	}
-	return y.publish(ctx, repo, pr, ans, files)
+	return y.publishOnce(ctx, repo, pr, ans, files, cached)
+}
+
+func (y *Yard) publishOnce(ctx context.Context, repo config.Repo, pr github.PullRequest, ans answer, files []github.PRFile, key string) error {
+	err := y.publish(ctx, repo, pr, ans, files)
+	status, refused := errors.AsType[*github.HTTPError](err)
+	if err != nil && (!refused || !permanent(status.Status)) && ctx.Err() == nil {
+		if y.answers == nil {
+			y.answers = map[string]answer{}
+		}
+		y.answers[key] = ans
+		return err
+	}
+	delete(y.answers, key)
+	return err
 }
 
 // publish posts the verdict with findings on their lines, falling back to the body.
@@ -266,7 +285,7 @@ func inDiff(files []github.PRFile, file string, line int) bool {
 	return false
 }
 
-// permanent tells a refusal that a retry of the same review cannot pass from a passing limit.
+// permanent tells a refusal of the review itself from a passing one (auth, rate limit, outage).
 func permanent(status int) bool {
-	return status >= 400 && status < 500 && status != http.StatusForbidden && status != http.StatusTooManyRequests
+	return status == http.StatusBadRequest || status == http.StatusRequestEntityTooLarge || status == http.StatusUnprocessableEntity
 }

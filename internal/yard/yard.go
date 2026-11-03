@@ -72,6 +72,9 @@ type Yard struct {
 	// Passed, when set, hears the end of every pass.
 	Passed func(time.Time, int, error)
 	alert  alert
+	// answers holds a review answer whose publish failed for a passing reason (403, 429,
+	// 5xx), so the next pass publishes it without a new model run
+	answers map[string]answer
 }
 
 const leftoverMessage = "chore: commit changes the agent left uncommitted"

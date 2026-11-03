@@ -127,7 +127,7 @@ const changes = `{"verdict": "request_changes", "summary": "Breaks b.", "finding
  {"file": "a.go", "line": 15, "severity": "should", "why": "name unclear"},
  {"file": "README.md", "line": 0, "severity": "should", "why": "docs stale"}]}`
 
-// S25, S27: findings on their lines inside the diff, the rest in the body; the prompt
+// spec: docs/spec.md.S25, S27: findings on their lines inside the diff, the rest in the body; the prompt
 // carries the owner's linked issue, not a stranger's; the review tree is removed.
 func TestAgentReviewRequestsChanges(t *testing.T) {
 	gh := newGitHub(
@@ -161,7 +161,7 @@ func TestAgentReviewRequestsChanges(t *testing.T) {
 	}
 }
 
-// S26: a bad answer gets one retry in the same session; two bad answers fail the review
+// spec: docs/spec.md.S26: a bad answer gets one retry in the same session; two bad answers fail the review
 // without an approval and without repeating on the next pass.
 func TestAgentReviewBadAnswer(t *testing.T) {
 	for _, c := range []struct {
@@ -191,7 +191,7 @@ func TestAgentReviewBadAnswer(t *testing.T) {
 	}
 }
 
-// S28: a used-up plan pauses the review agent; the PR waits and is reviewed after the pause.
+// spec: docs/spec.md.S28: a used-up plan pauses the review agent; the PR waits and is reviewed after the pause.
 func TestAgentReviewPausedOnLimit(t *testing.T) {
 	gh := newGitHub()
 	gh.open = []github.PullRequest{ownerPR(7, "s1")}
@@ -258,5 +258,21 @@ func TestRefusedPublish(t *testing.T) {
 				t.Fatalf("finding not in body: %q", gh.posted[0])
 			}
 		})
+	}
+}
+
+// A rate-limited publish is retried on the next pass with the same answer, no new model run.
+func TestPassingRefusalKeepsAnswer(t *testing.T) {
+	gh := newGitHub()
+	gh.open = []github.PullRequest{ownerPR(7, "s1")}
+	none := 0
+	gh.refuse = &none
+	gh.refuseStatus = 429
+	y := reviewYard(t, gh)
+	y.Pass(t.Context())
+	gh.refuse = nil
+	y.Pass(t.Context())
+	if calls := len(y.Agents.(*fakeAgents).calls); calls != 1 || len(gh.posted) != 1 {
+		t.Fatalf("model runs = %d, posted = %q", calls, gh.posted)
 	}
 }

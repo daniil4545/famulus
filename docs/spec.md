@@ -112,8 +112,8 @@ answer or a failed run posts a `COMMENT` "famulus review failed" and fails the c
 approval and no retry until a new push. The verdict is `APPROVE` or `REQUEST_CHANGES`; a
 finding whose line is inside a diff hunk becomes a line comment, others go to the body. A
 used-up plan pauses `claude` for tasks and reviews alike; the PR stays queued until then. GitHub
-refusing a line comment moves all findings to the body; a review GitHub still refuses (4xx
-other than 403 and 429) fails the check and is not re-run on that SHA. After a restart the
+refusing a line comment moves all findings to the body; a review GitHub still refuses (400, 413, 422) fails the check and is not re-run on that SHA; after a passing refusal (auth,
+rate limit, outage) the next pass publishes the same answer without a new model run. After a restart the
 bot's published review finishes the check without a new model run.
 
 The panel shows the last pass, last successful pass (UTC), consecutive failures and last
