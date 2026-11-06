@@ -185,6 +185,11 @@ wins over pending, neutral and skipped count as success. Issue links come from
 | Claude Code | `claude -p --output-format json --dangerously-skip-permissions --model M --effort E` | `--resume ID` | `CLAUDE_CODE_OAUTH_TOKEN` from `claude setup-token` |
 | Codex | `codex exec --json --dangerously-bypass-approvals-and-sandbox -o FILE -` | `codex exec resume ID` | `codex login --device-auth` once, inside the container |
 
+Subscriptions (checked 2026-10-27): Anthropic forbids routing subscription credentials on
+behalf of other users (code.claude.com/docs/en/legal-and-compliance); OpenAI says not to use
+a ChatGPT login in automation for public repositories (developers.openai.com/codex/noninteractive).
+famulus serves one owner on own repositories.
+
 The container is the sandbox, so the permission bypass flags are allowed inside it. The
 agent's environment has no `FAMULUS_*` variables: it never sees the App key and cannot
 push. A resume that fails starts a new session with the rules and a summary of the task.

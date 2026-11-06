@@ -16,9 +16,12 @@ Set `review = true` on a repository in `famulus.toml`. The check `famulus` on a 
 
 | Check | Meaning | Your move |
 |---|---|---|
-| Waiting for CI | CI of the head runs or failed, or the base is red | fix CI |
+| Waiting for CI | CI of the head runs | none |
+| Waiting for green CI / `main` is red | CI of the head or of the base failed | fix CI |
 | Gate files changed without the label | the PR changes workflows, linter configs or `Makefile` | add the label `gate-change` and push |
 | Approved / Changes requested | the agent review; findings are line comments | fix the `must` findings |
+| Agent review paused | the Claude plan is used up | none, it resumes itself |
+| famulus review failed / Publishing the review failed | a bad answer twice, or GitHub refused the review | push again; the cause is in the log |
 | Daily review limit reached | `review_daily_limit` model runs done today | none, it runs the next UTC day |
 
 ## Coding runner (frozen)
