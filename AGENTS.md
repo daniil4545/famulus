@@ -2,10 +2,10 @@
 
 ## Project
 
-A local runner that polls GitHub issues labeled `agent`, runs a coding agent CLI (OpenCode,
-Claude Code, Codex) in a worktree and opens pull requests as a GitHub App bot; the owner's
-review notes go back to the same session. The behaviour canon is `docs/spec.md`; rules the
-runner gives to its own agents are `rules/AGENTS.md`.
+A local guard of pull requests as a GitHub App bot: code checks, then a read-only Claude
+review, one check `famulus` and one review per head SHA. The frozen coding runner polls issues
+labeled `agent` and runs OpenCode, Claude Code or Codex. The behaviour canon is
+`docs/spec.md`; the prompts are `rules/AGENTS.md` (runner) and `rules/REVIEW.md` (guard).
 
 ## Stack
 
@@ -19,17 +19,19 @@ an interface; nothing imports `yard` but `cmd`.
 
 | Path | Role |
 |---|---|
-| `internal/yard` | the pass: state changes, prompts (spec sections 2-3) |
+| `internal/yard` | the pass: state changes, prompts, the guard (spec sections 2-3) |
+| `internal/config` | `famulus.toml` |
+| `internal/panel` | the read-only admin page |
 | `internal/github` | App JWT, installation tokens, issues, labels, notes, PRs |
 | `internal/workspace` | clones, worktrees, push with the token in an env header |
 | `internal/agent` | the three CLIs and the parsing of their output |
 | `internal/state` | `state.json` |
-| `rules/AGENTS.md` | embedded into the first prompt of every run |
+| `rules/AGENTS.md`, `rules/REVIEW.md` | embedded prompts of the runner and the guard |
 
 ## Rules
 
 - Spec first: a change of behaviour updates `docs/spec.md` (states, scenarios S*, boundaries R*).
-- Boundaries R1-R5 of the spec have tests; keep them green and add one for a new boundary.
+- Boundaries R1-R7 of the spec have tests; keep them green and add one for a new boundary.
 - The agent process never gets `FAMULUS_*` variables or a GitHub token.
 - Agent CLI output is untrusted: parse it defensively, a fixture in `internal/agent/testdata`
   for every new format, from a live run.
