@@ -176,3 +176,15 @@ func TestReviewTree(t *testing.T) {
 		t.Fatalf("review tree left: %v", err)
 	}
 }
+
+// spec: docs/spec.md.R5: git and the hooks it runs never see the App key.
+func TestGitHidesRunnerSecrets(t *testing.T) {
+	t.Setenv("FAMULUS_APP_KEY_B64", "app-key-value")
+	out, err := git(t.Context(), t.TempDir(), nil, "-c", "alias.e=!env", "e")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if strings.Contains(out, "FAMULUS_") || !strings.Contains(out, "PATH=") {
+		t.Fatalf("git environment: %s", out)
+	}
+}

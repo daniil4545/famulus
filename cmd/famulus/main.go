@@ -36,6 +36,9 @@ func run() error {
 	configPath := flag.String("config", "famulus.toml", "path to the config file")
 	once := flag.Bool("once", false, "make one pass and exit")
 	flag.Parse()
+	if err := hideProc(); err != nil {
+		return err
+	}
 
 	recent := panel.NewLog(300)
 	log := slog.New(slog.NewTextHandler(io.MultiWriter(os.Stdout, recent), nil))
