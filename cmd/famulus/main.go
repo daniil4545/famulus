@@ -37,7 +37,7 @@ func run() error {
 	once := flag.Bool("once", false, "make one pass and exit")
 	flag.Parse()
 	if err := hideProc(); err != nil {
-		return fmt.Errorf("hide the runner process: %w", err)
+		return err
 	}
 
 	recent := panel.NewLog(300)
