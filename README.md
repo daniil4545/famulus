@@ -1,15 +1,30 @@
 # famulus
 
-Label a GitHub issue `agent`, get a pull request from a coding agent, and review it like a
-colleague's: your comments go back to the same agent session. Runs locally in Docker with
-OpenCode, Claude Code or Codex on your own subscriptions.
+A guard for your pull requests. A GitHub App bot checks every open PR from outside it:
+CI of the head and the base, CI files the PR changes, then a read-only Claude review against
+the linked issue and the project rules. It posts one check `famulus` and one review per head
+SHA and never merges. Runs locally in Docker on your own subscription.
 
 ## Stage
 
-MVP for one owner. Polling, the three agents, questions on the issue, the review loop and a
-GitHub App bot work; the owner merges by hand. Design and scenarios: `docs/spec.md`.
+0.1.0 for one owner. The guard is in use; the coding runner below works but is frozen.
+Design and scenarios: `docs/spec.md`.
 
-## How it works
+## Guard
+
+Set `review = true` on a repository in `famulus.toml`. The check `famulus` on a PR shows:
+
+| Check | Meaning | Your move |
+|---|---|---|
+| Waiting for CI | CI of the head runs | none |
+| Waiting for green CI / `main` is red | CI of the head or of the base failed | fix CI |
+| Gate files changed without the label | the PR changes workflows, linter configs or `Makefile` | add the label `gate-change` and push |
+| Approved / Changes requested | the agent review; findings are line comments | fix the `must` findings |
+| Agent review paused | the Claude plan is used up | none, it resumes itself |
+| Review failed / Publishing the review failed | a bad answer twice, or GitHub refused the review | push a new commit to retry |
+| Daily review limit reached | `review_daily_limit` model runs done today | none, it runs the next UTC day |
+
+## Coding runner (frozen)
 
 1. You open an issue and add the label `agent` (or `agent:claude`, `agent:codex` next to it).
 2. Within a minute the runner checks out `agent/<N>-<slug>` and starts the agent.
@@ -71,5 +86,6 @@ Everything else is in `famulus.toml`, see `famulus.example.toml`.
 |---|---|
 | model, states, scenarios, decisions | `docs/spec.md` |
 | rules every agent run starts with | `rules/AGENTS.md` |
+| review checklist and answer format | `rules/REVIEW.md` |
 | rules for agents developing famulus | `AGENTS.md` |
 | what changed | `git log` |

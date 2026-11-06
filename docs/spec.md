@@ -1,7 +1,7 @@
 # famulus spec
 
-Stage: MVP. The owner accepts pull requests by hand. Acceptance gates, scores and a journal
-come later (admitd vision, stage 2 "own farm").
+Stage: 0.1.0. famulus guards pull requests of the watched repositories and never merges;
+the coding runner is frozen: it works, but gets no new features.
 
 ## Contents
 
@@ -18,7 +18,13 @@ come later (admitd vision, stage 2 "own farm").
 ## 1. What it is
 
 A Docker container on the owner's machine. One process polls the watched GitHub
-repositories every minute. An issue with the label `agent` goes to a coding agent: OpenCode,
+repositories every minute and has two roles.
+
+The guard reviews open pull requests: code checks first (CI of the head and the base, gate
+files), then a read-only Claude review against the linked issue and the project rules. The
+result is one check `famulus` and one review per head SHA.
+
+The coding runner (frozen): an issue with the label `agent` goes to a coding agent: OpenCode,
 Claude Code or Codex. The agent commits on a branch. The runner pushes the branch and opens
 a pull request as a GitHub App bot. Later notes of the owner on the pull request or the issue
 go back to the same agent session. When the agent lacks something, it asks in a comment.
@@ -28,7 +34,7 @@ Not: a GitHub Action, a hosted service, an auto-merger, a queue for several user
 Name: famulus (a scholar's assistant), checked 2026-10-28; GitHub App `famulus-agent`, because
 the account `famulus` exists. Trademarks and domains not checked.
 
-Prior art rechecked on 2026-10-28 (`docs/research/cloud-coding-agents.md`). Close ones:
+Prior art of the runner, checked on 2026-10-28. Close ones:
 AgentConnect (ACP, App bot, PR feedback resumes the author session, but GitHub only by webhook
 and four services), propr (label, Docker, subscriptions, but a new session per comment),
 OpenHands Agent Canvas (Claude Code and Codex over ACP, issue-to-PR automation, but the user's
@@ -161,20 +167,15 @@ pause end of each agent and the count of new issues started on the current UTC d
 | `internal/agent` | the three CLIs behind one call: prompt and session in, session and final message out |
 | `internal/state` | `state.json`, written through a temporary file |
 | `internal/yard` | the pass, state changes, prompts |
+| `internal/yard/review.go`, `agentreview.go` | the guard: code checks, the agent review, the check and the review |
 | `internal/yard/alert.go` | failure issue lifecycle in `alert_repo`, restart lookup and hourly updates |
-| `internal/panel` | read-only admin page on `panel` (default `:8080`): health, tasks from `state.json`, last log lines |
-| `rules/AGENTS.md` | rules every first prompt starts with |
+| `internal/panel` | read-only admin page on `panel` (default `:8080`): health, tasks and guarded PRs, last log lines |
+| `rules/AGENTS.md` | rules every first prompt of the runner starts with |
+| `rules/REVIEW.md` | the review checklist and answer format |
 
-The GitHub client also exposes reviewer primitives; the runner does not call them yet.
-It lists open PRs filtered by base, issue details, PR files (up to GitHub's 3000-file cap)
-and reviews, with pagination. Local issue links come from case-insensitive
-`Closes|Fixes|Resolves #N` in the PR body, deduplicated in order; no GraphQL lookup.
-For either a PR head or base SHA, CI combines latest check runs (excluding a supplied
-check name) and latest legacy statuses per context. Failure takes precedence over pending;
-no remaining results means pending. Completed neutral and skipped checks count as success.
-Review writes pin `commit_id`, accept APPROVE, REQUEST_CHANGES or COMMENT and optional
-RIGHT-side line comments. A `famulus` check is created or updated on the supplied SHA with
-queued, in_progress or completed status, success/failure conclusion and title/summary.
+CI of a SHA combines the latest check runs (without our own) and legacy statuses: failure
+wins over pending, neutral and skipped count as success. Issue links come from
+`Closes|Fixes|Resolves #N` in the PR body.
 
 ## 5. Agents
 
@@ -183,6 +184,11 @@ queued, in_progress or completed status, success/failure conclusion and title/su
 | OpenCode | `opencode run --format json --model M` | `--session ID` | free Zen models need none |
 | Claude Code | `claude -p --output-format json --dangerously-skip-permissions --model M --effort E` | `--resume ID` | `CLAUDE_CODE_OAUTH_TOKEN` from `claude setup-token` |
 | Codex | `codex exec --json --dangerously-bypass-approvals-and-sandbox -o FILE -` | `codex exec resume ID` | `codex login --device-auth` once, inside the container |
+
+Subscriptions (checked 2026-10-27): Anthropic forbids routing subscription credentials on
+behalf of other users (code.claude.com/docs/en/legal-and-compliance); OpenAI says not to use
+a ChatGPT login in automation for public repositories (developers.openai.com/codex/noninteractive).
+famulus serves one owner on own repositories.
 
 The container is the sandbox, so the permission bypass flags are allowed inside it. The
 agent's environment has no `FAMULUS_*` variables: it never sees the App key and cannot
@@ -249,6 +255,8 @@ What the runner does not do on any input:
 - The runner, not the agent, pushes and opens the PR: deterministic, and the agent holds
   no credentials.
 - Rules travel in the prompt, not in files in the image: the same text for all three CLIs.
+- famulus is a guard outside the PR (2026-11-03): CI runs from the PR itself, so a PR can
+  weaken its own checks; famulus runs from main and only reads. The coding runner is frozen.
 - simplified: one agent at a time, first 100 issues and review notes per call. Issue comments
   are paginated so long-lived alerts can deduplicate recovery comments.
 
