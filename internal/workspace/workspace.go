@@ -246,10 +246,22 @@ func (w *Workspace) gitAuth(ctx context.Context, repo, dir string, args ...strin
 	return git(ctx, dir, env, args...)
 }
 
+// gitEnv drops the runner's FAMULUS_* variables: a hook planted in a clone runs with git's
+// environment (R5).
+func gitEnv(env []string) []string {
+	var kept []string
+	for _, kv := range env {
+		if !strings.HasPrefix(kv, "FAMULUS_") {
+			kept = append(kept, kv)
+		}
+	}
+	return kept
+}
+
 func git(ctx context.Context, dir string, env []string, args ...string) (string, error) {
 	cmd := exec.CommandContext(ctx, "git", args...) //nolint:gosec // fixed binary, arguments built by the runner
 	cmd.Dir = dir
-	cmd.Env = append(os.Environ(), env...)
+	cmd.Env = append(gitEnv(os.Environ()), env...)
 	var stdout, stderr bytes.Buffer
 	cmd.Stdout, cmd.Stderr = &stdout, &stderr
 	if err := cmd.Run(); err != nil {
