@@ -247,7 +247,7 @@ func (y *Yard) givenReview(ctx context.Context, repo config.Repo, pr github.Pull
 // written by anyone else are left out.
 func (y *Yard) reviewPrompt(ctx context.Context, repo config.Repo, pr github.PullRequest, files []github.PRFile) (string, error) {
 	var b strings.Builder
-	fmt.Fprintf(&b, "%s\n\n## Pull request #%d: %s\n\n%s\n", strings.TrimSpace(agentrules.Review), pr.Number, pr.Title, pr.Body)
+	fmt.Fprintf(&b, "%s\n\n%s\n\n## Pull request #%d: %s\n\n%s\n", strings.TrimSpace(agentrules.Review), strings.TrimSpace(agentrules.Principles), pr.Number, pr.Title, pr.Body)
 	for _, n := range github.LinkedIssues(pr.Body) {
 		issue, err := y.GitHub.Issue(ctx, repo.Name, n)
 		if errors.Is(err, github.ErrNotFound) {

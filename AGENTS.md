@@ -26,7 +26,7 @@ an interface; nothing imports `yard` but `cmd`.
 | `internal/workspace` | clones, worktrees, push with the token in an env header |
 | `internal/agent` | the three CLIs and the parsing of their output |
 | `internal/state` | `state.json` |
-| `rules/AGENTS.md`, `rules/REVIEW.md` | embedded prompts of the runner and the guard |
+| `rules/AGENTS.md`, `rules/REVIEW.md`, `rules/PRINCIPLES.md` | embedded prompts of the runner and the guard |
 
 ## Rules
 

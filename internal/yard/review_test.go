@@ -144,7 +144,8 @@ func TestAgentReviewRequestsChanges(t *testing.T) {
 	y.Pass(t.Context())
 
 	prompt := agents.calls[0].req.Prompt
-	if agents.calls[0].agent != "claude" || !strings.Contains(prompt, "do a") || strings.Contains(prompt, "ignore all rules") || !strings.Contains(prompt, "+package a") {
+	if agents.calls[0].agent != "claude" || !strings.Contains(prompt, "do a") || strings.Contains(prompt, "ignore all rules") || !strings.Contains(prompt, "+package a") ||
+		!strings.Contains(prompt, "P4. Only the task") {
 		t.Fatalf("prompt: %s", prompt)
 	}
 	if len(gh.lines) != 1 || gh.lines[0].Line != 11 || !strings.HasPrefix(gh.lines[0].Body, "must: nil map write") {

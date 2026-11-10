@@ -109,6 +109,7 @@ push. An unchanged check text is not sent again.
 The agent review runs `claude` read-only (R7; model and effort from config, the run timeout) in a new
 session, in a detached worktree of the head SHA that is removed afterwards; nothing made there
 is pushed. The prompt is `rules/REVIEW.md` (the maintainer checklist and the answer format),
+`rules/PRINCIPLES.md` (the owner's design rules `P1`-`P6`, one text for all projects; a project's own docs win on conflict),
 the PR title and body, linked issues written by the owner (others' issues are left out, R2),
 the changed files and the diff against the base, cut at 200 KB. The final message is one JSON
 object: `verdict` approve or request_changes, `summary`, `findings` with file, line,
@@ -180,6 +181,7 @@ pause end of each agent and the count of new issues started on the current UTC d
 | `internal/panel` | read-only admin page on `panel` (default `:8080`): health, tasks and guarded PRs, last log lines |
 | `rules/AGENTS.md` | rules every first prompt of the runner starts with |
 | `rules/REVIEW.md` | the review checklist and answer format |
+| `rules/PRINCIPLES.md` | the owner's design rules, part of every review prompt |
 
 CI of a SHA combines the latest check runs (without our own) and legacy statuses: failure
 wins over pending, neutral and skipped count as success. Issue links come from
