@@ -14,6 +14,7 @@ review_daily_limit = 20 # agent reviews of PRs per UTC day; 0 turns the cap off
 review_ci_timeout = "2h" # CI that did not start on a PR commit in this time fails the check
 work_dir = "/work" # clones, worktrees and state.json, a Docker volume
 alert_repo = "daniil4545/famulus" # failure issues; empty or omitted disables alerts
+# telegram_chat = "123456789" # also send an outage and its end to this chat; needs FAMULUS_TELEGRAM_TOKEN
 # Files of the CI gate: famulus never approves a PR that changes one. Default shown.
 # gate_files = [".github/workflows/**", ".github/actions/**", ".golangci.yml", ".golangci.yaml", ".golangci.toml", ".swiftlint.yml", ".gitleaks.toml", "ruff.toml", "Makefile", "*.mk"]
 

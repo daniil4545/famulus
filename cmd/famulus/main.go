@@ -25,6 +25,7 @@ import (
 	"github.com/daniil4545/famulus/internal/github"
 	"github.com/daniil4545/famulus/internal/panel"
 	"github.com/daniil4545/famulus/internal/state"
+	"github.com/daniil4545/famulus/internal/telegram"
 	"github.com/daniil4545/famulus/internal/workspace"
 	"github.com/daniil4545/famulus/internal/yard"
 )
@@ -91,6 +92,9 @@ func run() error {
 	}
 	if *preview != "" {
 		return previewReview(ctx, y, *preview)
+	}
+	if token := os.Getenv("FAMULUS_TELEGRAM_TOKEN"); token != "" && cfg.TelegramChat != "" {
+		y.Notify = telegram.Sender("https://api.telegram.org", token, cfg.TelegramChat)
 	}
 	log.Info("famulus started", "bot", name, "owner", cfg.Owner, "repos", len(cfg.Repos), "interval", cfg.Interval)
 	if *once {

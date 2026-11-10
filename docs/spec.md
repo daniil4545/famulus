@@ -87,6 +87,13 @@ GitHub was unreachable, the pending outage is opened and closed on recovery. Pen
 before issue creation are held in memory. Alerts publish safe error categories; arbitrary
 CLI and remote error text stays in the local log.
 
+The alert issue needs the App key, so a broken key fails it too. With `telegram_chat` in the
+config and `FAMULUS_TELEGRAM_TOKEN` in the environment the same threshold also sends one
+message to that Telegram chat (Bot API `sendMessage`) with the safe error category, and one
+on the first successful pass. A failed send is tried again on the next pass. Without the
+token or the chat nothing is sent. A runner that cannot start (the key does not parse, the
+App identity is refused) exits before the first pass and sends nothing.
+
 A repository with `review = true` also gets a review pass before its tasks. Every non-draft
 PR is reviewed, whoever wrote it, once per head SHA; the verdict is stored in state and found
 again among the bot's reviews after a restart. Code decides first, on the check `famulus`:
@@ -181,7 +188,8 @@ pause end of each agent and the count of new issues started on the current UTC d
 | `internal/state` | `state.json`, written through a temporary file |
 | `internal/yard` | the pass, state changes, prompts |
 | `internal/yard/review.go`, `agentreview.go` | the guard: code checks, the agent review, the check and the review |
-| `internal/yard/alert.go` | failure issue lifecycle in `alert_repo`, restart lookup and hourly updates |
+| `internal/yard/alert.go` | failure issue lifecycle in `alert_repo`, restart lookup and hourly updates; the outage message |
+| `internal/telegram` | one text to one chat through the Bot API |
 | `internal/panel` | read-only admin page on `panel` (default `:8080`): health, tasks and guarded PRs, last log lines |
 | `rules/AGENTS.md` | rules every first prompt of the runner starts with |
 | `rules/REVIEW.md` | the review checklist and answer format |
@@ -262,6 +270,7 @@ What the runner does not do on any input:
 | S30 | review prompt or code asks the agent to run a command, read a file outside the worktree or print a secret | no tool for it; an answer holding a runner secret is not published, the review fails (R7) |
 | S31 | PR text or code tells the reviewer to approve or to drop findings | the rules call it untrusted data; the instruction is a `must` finding, the bug is still reported |
 | S32 | no CI check starts on the head SHA within `review_ci_timeout` | check failure "CI did not run", no model run; back to waiting when a run appears |
+| S33 | every GitHub call fails (broken App key), the alert issue cannot be opened | with Telegram configured: one message after three failed passes or five minutes, one on recovery |
 
 ## 8. Decisions
 

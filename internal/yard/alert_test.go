@@ -260,3 +260,40 @@ func TestReportedTaskFailuresDoNotAlert(t *testing.T) {
 		t.Fatalf("pass errors = %v, alert failures = %d", errs, y.alert.failures)
 	}
 }
+
+// spec: S33: a broken App key fails every GitHub call, the alert issue too; Notify still
+// hears the outage once, and the recovery once.
+func TestOutageNotifiedWithoutGitHub(t *testing.T) {
+	y, _, _ := newYard(t, newGitHub())
+	a := newAlertServer(t, y)
+	a.offline = true
+	var sent []string
+	refuse := true
+	y.Notify = func(_ context.Context, text string) error {
+		if refuse {
+			return errors.New("telegram down")
+		}
+		sent = append(sent, text)
+		return nil
+	}
+	broken := &github.HTTPError{Status: 401}
+	for n := range 5 {
+		// the first send fails and is tried again on the next pass
+		refuse = n == 2
+		if err := y.reportAlert(t.Context(), a.at.Add(time.Duration(n)*time.Minute), 1, broken); err == nil {
+			t.Fatal("offline GitHub not simulated")
+		}
+	}
+	if len(sent) != 1 || !strings.Contains(sent[0], "failing since "+t0.UTC().Format(time.RFC3339)) || !strings.Contains(sent[0], "GitHub API answered 401") {
+		t.Fatalf("outage texts = %q", sent)
+	}
+	a.offline = false
+	for range 2 {
+		if err := y.reportAlert(t.Context(), a.at.Add(10*time.Minute), 0, nil); err != nil {
+			t.Fatal(err)
+		}
+	}
+	if len(sent) != 2 || !strings.HasPrefix(sent[1], "famulus recovered, down from ") {
+		t.Fatalf("texts = %q", sent)
+	}
+}

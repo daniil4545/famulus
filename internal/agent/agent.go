@@ -159,7 +159,7 @@ func agentEnv(env []string) []string {
 }
 
 // secretEnv names the variables whose values must never leave the runner in agent text.
-var secretEnv = []string{"CLAUDE_CODE_OAUTH_TOKEN", "FAMULUS_APP_KEY_B64"}
+var secretEnv = []string{"CLAUDE_CODE_OAUTH_TOKEN", "FAMULUS_APP_KEY_B64", "FAMULUS_TELEGRAM_TOKEN"}
 
 // Leaks reports whether text carries the value of a runner secret, also spaced out or
 // reversed. The sandbox is the defence; this only stops the plainest copy.
