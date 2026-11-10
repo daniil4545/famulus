@@ -6,13 +6,18 @@ GOVULNCHECK := go run golang.org/x/vuln/cmd/govulncheck@v1.9.0
 build:
 	go build ./...
 
+# Tests run as on a CI runner: no machine git config and no author guessed from the host name, so a
+# test that commits without naming its author fails here too.
+GIT_BARE := GIT_CONFIG_GLOBAL=/dev/null GIT_CONFIG_NOSYSTEM=1 \
+	GIT_CONFIG_COUNT=1 GIT_CONFIG_KEY_0=user.useConfigOnly GIT_CONFIG_VALUE_0=true
+
 # Tests need git in PATH; no network, no database.
 test:
-	go test -count=1 ./...
+	$(GIT_BARE) go test -count=1 ./...
 
 # The runner polls, runs agents and serves the panel at once: CI runs the tests with the race detector.
 test-race:
-	go test -race -count=1 ./...
+	$(GIT_BARE) go test -race -count=1 ./...
 
 vuln:
 	$(GOVULNCHECK) ./...
@@ -27,8 +32,10 @@ fmt-check:
 vet:
 	go vet ./...
 
+# Both targets on any machine: a Mac alone never compiles the _linux.go files the container runs.
 lint:
-	golangci-lint run --timeout 120s
+	GOOS=linux golangci-lint run --timeout 120s
+	GOOS=darwin golangci-lint run --timeout 120s
 
 # gitleaks ignores .gitignore, so it scans what git would commit instead of local .env files.
 secrets:
