@@ -91,7 +91,8 @@ The alert issue needs the App key, so a broken key fails it too. With `telegram_
 config and `FAMULUS_TELEGRAM_TOKEN` in the environment the same threshold also sends one
 message to that Telegram chat (Bot API `sendMessage`) with the safe error category, and one
 on the first successful pass. A failed send is tried again on the next pass. Without the
-token or the chat nothing is sent. A runner that cannot start (the key does not parse, the
+token or the chat nothing is sent. What was sent is kept in memory: after a restart in the
+middle of an outage the recovery message may not come. A runner that cannot start (the key does not parse, the
 App identity is refused) exits before the first pass and sends nothing.
 
 A repository with `review = true` also gets a review pass before its tasks. Every non-draft

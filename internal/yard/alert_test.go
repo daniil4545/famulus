@@ -288,12 +288,14 @@ func TestOutageNotifiedWithoutGitHub(t *testing.T) {
 		t.Fatalf("outage texts = %q", sent)
 	}
 	a.offline = false
-	for range 2 {
+	// the recovery message fails once and is sent on the next good pass, then never again
+	for n := range 3 {
+		refuse = n == 0
 		if err := y.reportAlert(t.Context(), a.at.Add(10*time.Minute), 0, nil); err != nil {
 			t.Fatal(err)
 		}
 	}
-	if len(sent) != 2 || !strings.HasPrefix(sent[1], "famulus recovered, down from ") {
+	if len(sent) != 2 || !strings.Contains(sent[1], "down from "+t0.UTC().Format(time.RFC3339)) || !strings.HasPrefix(sent[1], "famulus recovered, down from ") {
 		t.Fatalf("texts = %q", sent)
 	}
 }

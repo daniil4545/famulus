@@ -31,6 +31,12 @@ func (a *alert) failed(at time.Time, last error) {
 	a.last = last
 }
 
+// clear ends the outage; a recovery message that did not get through keeps its outage start
+// and is sent on a later pass.
+func (a *alert) clear(at time.Time) {
+	*a = alert{lastGood: at, told: a.told, down: a.down}
+}
+
 func (y *Yard) reportAlert(ctx context.Context, at time.Time, errs int, last error) error {
 	a := &y.alert
 	if errs > 0 {
@@ -40,7 +46,7 @@ func (y *Yard) reportAlert(ctx context.Context, at time.Time, errs int, last err
 	y.notifyOutage(ctx, at, errs)
 	if y.Config.AlertRepo == "" {
 		if errs == 0 {
-			*a = alert{lastGood: at}
+			a.clear(at)
 		}
 		return nil
 	}
@@ -64,7 +70,7 @@ func (y *Yard) reportAlert(ctx context.Context, at time.Time, errs int, last err
 		}
 	}
 	if errs == 0 {
-		*a = alert{lastGood: at}
+		a.clear(at)
 	}
 	return nil
 }

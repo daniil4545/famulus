@@ -27,9 +27,13 @@ func TestSender(t *testing.T) {
 		t.Fatalf("err = %v", err)
 	}
 
-	// an unreachable server: the error must not print the URL, it holds the token
+	// an unreachable server and a URL that does not parse: the error must not print the
+	// URL, it holds the token
 	srv.Close()
 	if err := send(t.Context(), "x"); err == nil || strings.Contains(err.Error(), "secret") {
+		t.Fatalf("err = %v", err)
+	}
+	if err := Sender(srv.URL, "123:sec\x7fret", "1")(t.Context(), "x"); err == nil || strings.Contains(err.Error(), "sec") {
 		t.Fatalf("err = %v", err)
 	}
 }
