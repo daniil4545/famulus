@@ -80,7 +80,8 @@ func TestReviewAnyAuthorSkipsDrafts(t *testing.T) {
 	gh.open = []github.PullRequest{stranger, draft, bot}
 	y := reviewYard(t, gh)
 	y.Pass(t.Context())
-	if len(gh.posted) != 2 || !slices.Contains(gh.checks, "a completed success: Approved") || !slices.Contains(gh.checks, "c completed success: Approved") {
+	if len(gh.posted) != 2 || !slices.Contains(gh.checks, "a completed success: Approved") || !slices.Contains(gh.checks, "c completed success: Approved") ||
+		!strings.Contains(gh.posted[0], "APPROVE") || !strings.Contains(gh.posted[1], "COMMENT") || !strings.Contains(gh.posted[1], "Approved. ") {
 		t.Fatalf("checks = %q, posted = %q", gh.checks, gh.posted)
 	}
 	if slices.ContainsFunc(gh.checks, func(c string) bool { return strings.HasPrefix(c, "b ") }) {

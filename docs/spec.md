@@ -253,12 +253,12 @@ What the runner does not do on any input:
 | S21 | another App has a `famulus` check on the same SHA | create our own check; later updates address only our App's check (R6) |
 | S22 | CI of the PR pending or failed, or base red | check `famulus` waits with the reason; no review |
 | S23 | PR changes a gate file, with any label | `REQUEST_CHANGES` and failed check without a model run, once per SHA, also after restart |
-| S24 | stranger's or the bot's PR; draft PR | the same pass as the owner's PR; a draft waits |
+| S24 | stranger's or the bot's PR; draft PR | the same pass as the owner's PR; on the bot's own PR the verdict is a `COMMENT` review, since GitHub refuses an approval of one's own PR, and the check carries the verdict; a draft waits |
 | S25 | code checks pass, agent finds a must issue | `REQUEST_CHANGES`, findings in the diff as line comments, the rest in the body, check failure |
 | S26 | agent answers without valid JSON, or the verdict contradicts the findings | one retry in the same session; twice bad - `COMMENT` "review failed", check failure, no approval |
 | S27 | linked issue written by someone else | in the review prompt, marked as data, not instructions |
 | S28 | review agent hits a used-up plan | agent paused, check queued "paused", review runs after the pause |
-| S29 | `review_daily_limit` model runs done today | check queued "Daily review limit reached", no model run; reviewed the next UTC day |
+| S29 | `review_daily_limit` model runs done today | check queued "Daily review limit reached", no model run; reviewed the next UTC day; the cap is shared by all authors, so a stranger's PRs can use it up for the day |
 | S30 | review prompt or code asks the agent to run a command, read a file outside the worktree or print a secret | no tool for it; an answer holding a runner secret is not published, the review fails (R7) |
 | S31 | PR text or code tells the reviewer to approve or to drop findings | the rules call it untrusted data; the instruction is a `must` finding, the bug is still reported |
 | S32 | no CI check starts on the head SHA within `review_ci_timeout` | check failure "CI did not run", no model run; back to waiting when a run appears |

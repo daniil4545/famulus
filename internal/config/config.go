@@ -86,8 +86,8 @@ func (c Config) check() error {
 	if err := checkPatterns(c.GateFiles); err != nil {
 		return err
 	}
-	if c.DailyLimit < 0 || c.ReviewDailyLimit < 0 {
-		return errors.New("daily_limit or review_daily_limit is negative")
+	if c.DailyLimit < 0 || c.ReviewDailyLimit < 0 || c.ReviewCITimeout <= 0 {
+		return errors.New("daily_limit or review_daily_limit is negative, or review_ci_timeout is not positive")
 	}
 	if err := checkAgent(c.Agent); err != nil {
 		return err

@@ -16,6 +16,7 @@ const (
 	checkName  = "famulus"
 	reviewNext = "Code checks passed; the agent review comes next"
 	ciWaiting  = "Waiting for CI"
+	ciNone     = "No CI check has started on this commit yet."
 	ciMissing  = "CI did not run"
 )
 
@@ -59,7 +60,12 @@ func (y *Yard) reviewPR(ctx context.Context, repo config.Repo, pr github.PullReq
 				Summary: fmt.Sprintf("No CI check started on this commit within %s. Rerun CI or push a new commit.", y.Config.ReviewCITimeout),
 			})
 		}
-		return y.setCheck(ctx, repo, pr, github.Check{Status: "in_progress", Title: ciWaiting, Summary: "The review starts when CI is green."})
+		summary := "The review starts when CI is green."
+		if ci.None {
+			// its own text: the record's time then counts from the first pass that saw no CI
+			summary = ciNone
+		}
+		return y.setCheck(ctx, repo, pr, github.Check{Status: "in_progress", Title: ciWaiting, Summary: summary})
 	case "failure":
 		return y.setCheck(ctx, repo, pr, github.Check{
 			Status: "in_progress", Title: "Waiting for green CI",
@@ -92,14 +98,14 @@ func (y *Yard) reviewPR(ctx context.Context, repo config.Repo, pr github.PullReq
 }
 
 // ciOverdue tells whether the head SHA has waited for its CI to start longer than the
-// timeout. The record's time is when the waiting check was set; once overdue it stays so
-// until a check run appears.
+// timeout. The record's time is when the check first said that no CI started; once overdue
+// it stays so until a check run appears.
 func (y *Yard) ciOverdue(repo config.Repo, pr github.PullRequest) bool {
 	rec := y.State.Reviews[state.Key(repo.Name, pr.Number)]
 	if rec == nil || rec.SHA != pr.Head.SHA {
 		return false
 	}
-	waited := strings.Contains(rec.Check, ": "+ciWaiting+"\n") && y.now().Sub(rec.At) >= y.Config.ReviewCITimeout
+	waited := strings.HasSuffix(rec.Check, "\n"+ciNone) && y.now().Sub(rec.At) >= y.Config.ReviewCITimeout
 	return waited || strings.Contains(rec.Check, ": "+ciMissing+"\n")
 }
 
@@ -113,7 +119,12 @@ func (y *Yard) verdict(ctx context.Context, repo config.Repo, pr github.PullRequ
 	}
 	given := slices.ContainsFunc(reviews, func(r github.Review) bool { return r.User.Login == y.Bot && r.CommitID == sha })
 	if !given {
-		if err := y.GitHub.CreateReview(ctx, repo.Name, pr.Number, sha, event, body, comments); err != nil {
+		post := event
+		if pr.User.Login == y.Bot {
+			// GitHub refuses an approval or a request for changes on one's own PR
+			post, body = "COMMENT", title+". "+body
+		}
+		if err := y.GitHub.CreateReview(ctx, repo.Name, pr.Number, sha, post, body, comments); err != nil {
 			return fmt.Errorf("publish review: %w", err)
 		}
 	}
