@@ -33,6 +33,25 @@ type Request struct {
 type Result struct {
 	Session string
 	Text    string
+	// Usage is what the run spent; only claude reports it.
+	Usage Usage
+}
+
+// Usage of one or several runs. CostUSD is the CLI's figure at list prices, also on a plan.
+type Usage struct {
+	CostUSD    float64 `json:"cost_usd"`
+	Input      int     `json:"input_tokens"`
+	Output     int     `json:"output_tokens"`
+	CacheRead  int     `json:"cache_read_tokens"`
+	CacheWrite int     `json:"cache_write_tokens"`
+	Turns      int     `json:"turns"`
+}
+
+func (u Usage) Add(v Usage) Usage {
+	return Usage{
+		CostUSD: u.CostUSD + v.CostUSD, Input: u.Input + v.Input, Output: u.Output + v.Output,
+		CacheRead: u.CacheRead + v.CacheRead, CacheWrite: u.CacheWrite + v.CacheWrite, Turns: u.Turns + v.Turns,
+	}
 }
 
 type CLI struct {

@@ -58,25 +58,20 @@ func (y *Yard) agentReview(ctx context.Context, repo config.Repo, pr github.Pull
 			Summary: fmt.Sprintf("%d agent reviews ran today (UTC); this one runs tomorrow.", y.Config.ReviewDailyLimit),
 		})
 	}
-	prompt, err := y.reviewPrompt(ctx, repo, pr, files)
+	dir, prompt, err := y.reviewInput(ctx, repo, pr, files)
 	if err != nil {
 		return err
 	}
-	dir, diff, err := y.Work.ReviewTree(ctx, repo.Name, repo.Base, pr.Number, pr.Head.SHA)
-	if err != nil {
-		return fmt.Errorf("review tree: %w", err)
-	}
-	defer func() {
-		if err := y.Work.RemoveReview(context.WithoutCancel(ctx), repo.Name, pr.Number); err != nil {
-			y.Log.Warn("remove review tree", "repo", repo.Name, "pr", pr.Number, "err", err)
-		}
-	}()
+	defer y.dropReview(ctx, repo, pr.Number)
 	// every model run counts, a failed one too: the cap is about cost
 	y.countReview()
 	if err := y.State.Save(); err != nil {
 		return fmt.Errorf("save state: %w", err)
 	}
-	ans, err := y.askReviewer(ctx, dir, prompt+"\n\n## Diff\n\n```diff\n"+diff+"\n```\n")
+	ans, usage, err := y.askReviewer(ctx, dir, prompt)
+	y.Log.Info("review run", "repo", repo.Name, "pr", pr.Number, "sha", pr.Head.SHA, "cost_usd", usage.CostUSD,
+		"input_tokens", usage.Input, "output_tokens", usage.Output, "cache_read_tokens", usage.CacheRead,
+		"cache_write_tokens", usage.CacheWrite, "turns", usage.Turns)
 	if limit, ok := errors.AsType[*agent.LimitError](err); ok {
 		y.pauseReviews(limit)
 		return y.pausedCheck(ctx, repo, pr)
@@ -97,6 +92,55 @@ func (y *Yard) agentReview(ctx context.Context, repo config.Repo, pr github.Pull
 		return y.verdict(ctx, repo, pr, "COMMENT", "famulus review failed: "+reason+". Push a new commit to retry.", "Review failed", nil)
 	}
 	return y.publishOnce(ctx, repo, pr, ans, files, cached)
+}
+
+// reviewInput builds the review worktree of the PR head and the full prompt with the diff.
+func (y *Yard) reviewInput(ctx context.Context, repo config.Repo, pr github.PullRequest, files []github.PRFile) (dir, prompt string, err error) {
+	prompt, err = y.reviewPrompt(ctx, repo, pr, files)
+	if err != nil {
+		return "", "", err
+	}
+	dir, diff, err := y.Work.ReviewTree(ctx, repo.Name, repo.Base, pr.Number, pr.Head.SHA)
+	if err != nil {
+		return "", "", fmt.Errorf("review tree: %w", err)
+	}
+	return dir, prompt + "\n\n## Diff\n\n```diff\n" + diff + "\n```\n", nil
+}
+
+func (y *Yard) dropReview(ctx context.Context, repo config.Repo, number int) {
+	if err := y.Work.RemoveReview(context.WithoutCancel(ctx), repo.Name, number); err != nil {
+		y.Log.Warn("remove review tree", "repo", repo.Name, "pr", number, "err", err)
+	}
+}
+
+// Preview is the answer the guard would publish on a PR, with what the model runs spent.
+type Preview struct {
+	SHA string `json:"sha"`
+	answer
+	Usage agent.Usage `json:"usage"`
+}
+
+// PreviewReview runs the agent review of one PR and returns the answer; nothing is
+// published, saved or counted, and the code checks are skipped. It measures a prompt change.
+func (y *Yard) PreviewReview(ctx context.Context, repo config.Repo, number int) (Preview, error) {
+	pr, err := y.GitHub.PR(ctx, repo.Name, number)
+	if err != nil {
+		return Preview{}, fmt.Errorf("pull request: %w", err)
+	}
+	files, err := y.GitHub.PRFiles(ctx, repo.Name, number)
+	if err != nil {
+		return Preview{}, fmt.Errorf("pr files: %w", err)
+	}
+	dir, prompt, err := y.reviewInput(ctx, repo, pr, files)
+	if err != nil {
+		return Preview{}, err
+	}
+	defer y.dropReview(ctx, repo, number)
+	ans, usage, err := y.askReviewer(ctx, dir, prompt)
+	if err != nil {
+		return Preview{}, fmt.Errorf("%w (spent %.4f USD in %d turns)", err, usage.CostUSD, usage.Turns)
+	}
+	return Preview{SHA: pr.Head.SHA, answer: ans, Usage: usage}, nil
 }
 
 func (y *Yard) publishOnce(ctx context.Context, repo config.Repo, pr github.PullRequest, ans answer, files []github.PRFile, key string) error {
@@ -159,26 +203,28 @@ var (
 )
 
 // askReviewer runs a new session and asks once more when the answer does not parse.
-func (y *Yard) askReviewer(ctx context.Context, dir, prompt string) (answer, error) {
+func (y *Yard) askReviewer(ctx context.Context, dir, prompt string) (answer, agent.Usage, error) {
 	runCtx, cancel := context.WithTimeout(ctx, y.Config.Timeout)
 	defer cancel()
 	req := agent.Request{Dir: dir, Prompt: prompt, Model: y.Config.Models[config.Claude], Effort: y.Config.Effort[config.Claude], ReadOnly: true}
+	var spent agent.Usage
 	for try := range 2 {
 		res, err := y.Agents.Run(runCtx, config.Claude, req)
+		spent = spent.Add(res.Usage)
 		if err != nil {
-			return answer{}, fmt.Errorf("review agent: %w", err)
+			return answer{}, spent, fmt.Errorf("review agent: %w", err)
 		}
 		if agent.Leaks(res.Text) {
-			return answer{}, errLeak
+			return answer{}, spent, errLeak
 		}
 		ans, err := parseAnswer(res.Text)
 		if err == nil {
-			return ans, nil
+			return ans, spent, nil
 		}
 		y.Log.Warn("review answer rejected", "try", try+1, "err", err)
 		req.Session, req.Prompt = res.Session, fmt.Sprintf(retryPrompt, err)
 	}
-	return answer{}, errBadAnswer
+	return answer{}, spent, errBadAnswer
 }
 
 // givenReview returns the state of the bot's review on the head SHA, empty when there is none.

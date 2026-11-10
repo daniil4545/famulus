@@ -124,6 +124,14 @@ bot's published review finishes the check without a new model run. At most
 `review_daily_limit` (default 20) model runs per UTC day; past it the check stays queued
 with the reason. The panel lists the guarded PRs (SHA, verdict, check title) and today's runs.
 
+Every model run logs `review run` with the cost in USD at list prices, tokens and turns, as
+the `claude` result reports them. `famulus -review owner/repo#N` runs the same agent review
+on one PR of a configured repository and prints the answer with `sha` and `usage` as JSON;
+it skips the code checks and publishes, saves and counts nothing (as `publish_output=false`
+in PR-Agent). It measures a change of `rules/REVIEW.md` on a fixed set of PRs. It uses the
+review worktree of that PR in `work_dir`: run it with another `work_dir`, or while the
+runner is not reviewing the same PR.
+
 The panel shows the last pass, last successful pass (UTC), consecutive failures and last
 error. `/healthz` returns 200 only when a successful pass finished less than
 five minutes ago; startup and stale health return 503. Docker probes it with curl. A long

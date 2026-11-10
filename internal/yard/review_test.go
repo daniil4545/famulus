@@ -314,3 +314,32 @@ func TestReviewDailyLimit(t *testing.T) {
 		t.Fatalf("not reviewed next day: %q", gh.posted)
 	}
 }
+
+// spec: docs/spec.md section 2, `-review`: the answer and the usage of both runs come back;
+// nothing is published, counted or saved, and the review tree is removed.
+func TestPreviewReviewPublishesNothing(t *testing.T) {
+	gh := newGitHub()
+	gh.prs[7] = ownerPR(7, "s1")
+	y := reviewYard(t, gh)
+	agents := y.Agents.(*fakeAgents)
+	agents.usage = agent.Usage{CostUSD: 0.5, Turns: 3}
+	answers := []string{"not json", changes}
+	agents.next = func(agent.Request) (int, string, error) {
+		text := answers[0]
+		answers = answers[1:]
+		return 0, text, nil
+	}
+	got, err := y.PreviewReview(t.Context(), y.Config.Repos[0], 7)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got.SHA != "s1" || got.Verdict != "request_changes" || len(got.Findings) != 3 || got.Usage.CostUSD != 1 || got.Usage.Turns != 6 {
+		t.Fatalf("preview = %+v", got)
+	}
+	if len(gh.posted) != 0 || len(gh.checks) != 0 || len(y.State.Reviews) != 0 || y.reviewsFull() {
+		t.Fatalf("posted = %q, checks = %q, state = %+v", gh.posted, gh.checks, y.State.Reviews)
+	}
+	if !slices.Contains(y.Work.(*fakeWork).removed, "review 7") {
+		t.Fatal("review tree left")
+	}
+}

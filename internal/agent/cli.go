@@ -39,24 +39,36 @@ func (c CLI) claude(ctx context.Context, req Request) (Result, error) {
 
 func parseClaude(out []byte) (Result, error) {
 	var res struct {
-		Result  string `json:"result"`
-		Session string `json:"session_id"`
-		IsError bool   `json:"is_error"`
-		Subtype string `json:"subtype"`
+		Result  string  `json:"result"`
+		Session string  `json:"session_id"`
+		IsError bool    `json:"is_error"`
+		Subtype string  `json:"subtype"`
+		Cost    float64 `json:"total_cost_usd"`
+		Turns   int     `json:"num_turns"`
+		Usage   struct {
+			Input      int `json:"input_tokens"`
+			Output     int `json:"output_tokens"`
+			CacheRead  int `json:"cache_read_input_tokens"`
+			CacheWrite int `json:"cache_creation_input_tokens"`
+		} `json:"usage"`
 	}
 	if err := json.Unmarshal(lastLine(out), &res); err != nil {
 		return Result{}, fmt.Errorf("claude output: %w", err)
 	}
+	usage := Usage{
+		CostUSD: res.Cost, Input: res.Usage.Input, Output: res.Usage.Output,
+		CacheRead: res.Usage.CacheRead, CacheWrite: res.Usage.CacheWrite, Turns: res.Turns,
+	}
 	if res.IsError {
 		if isLimit(res.Result) {
-			return Result{Session: res.Session}, &LimitError{Agent: config.Claude, Message: tail(res.Result)}
+			return Result{Session: res.Session, Usage: usage}, &LimitError{Agent: config.Claude, Message: tail(res.Result)}
 		}
-		return Result{Session: res.Session}, fmt.Errorf("claude: %s: %s", res.Subtype, tail(res.Result))
+		return Result{Session: res.Session, Usage: usage}, fmt.Errorf("claude: %s: %s", res.Subtype, tail(res.Result))
 	}
 	if strings.TrimSpace(res.Result) == "" {
-		return Result{Session: res.Session}, errNoText
+		return Result{Session: res.Session, Usage: usage}, errNoText
 	}
-	return Result{Session: res.Session, Text: res.Result}, nil
+	return Result{Session: res.Session, Text: res.Result, Usage: usage}, nil
 }
 
 // codex: `codex exec --json` prints JSONL events, the first carries the thread id that
