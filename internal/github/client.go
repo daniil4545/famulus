@@ -101,8 +101,10 @@ type PullRequest struct {
 	Title  string `json:"title"`
 	Body   string `json:"body"`
 	Draft  bool   `json:"draft"`
-	User   User   `json:"user"`
-	Head   struct {
+	// MergedAt is empty for a PR that was not merged.
+	MergedAt string `json:"merged_at"`
+	User     User   `json:"user"`
+	Head     struct {
 		SHA string `json:"sha"`
 		Ref string `json:"ref"`
 	} `json:"head"`

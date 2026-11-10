@@ -111,7 +111,11 @@ session, in a detached worktree of the head SHA that is removed afterwards; noth
 is pushed. The prompt is `rules/REVIEW.md` (the maintainer checklist and the answer format),
 `rules/PRINCIPLES.md` (the owner's design rules `P1`-`P6`, one text for all projects; a project's own docs win on conflict),
 the PR title and body, linked issues written by the owner (others' issues are left out, R2),
-the changed files and the diff against the base, cut at 200 KB. The final message is one JSON
+the titles of the 15 latest merged PRs, the changed files and the diff against the base, cut at 200 KB.
+The agent checks the intent of the issue, the behaviour, the tests and the fit with the project's
+documents and the principles; a `must` about design names its written source, a principle or a
+document line, otherwise it is a `should`. The `summary` tells the owner the intent, the behaviour
+and the fit. The final message is one JSON
 object: `verdict` approve or request_changes, `summary`, `findings` with file, line,
 severity must or should, why and scenario. The runner checks it: `request_changes` exactly
 when a must finding exists. A bad answer gets one retry in the same session; a second bad

@@ -35,6 +35,7 @@ type GitHub interface {
 // Guard is the part of GitHub the review of the owner's pull requests needs.
 type Guard interface {
 	OpenPRs(ctx context.Context, repo, base string) ([]github.PullRequest, error)
+	MergedPRs(ctx context.Context, repo, base string, limit int) ([]github.PullRequest, error)
 	Issue(ctx context.Context, repo string, number int) (github.Issue, error)
 	CISummary(ctx context.Context, repo, ref, skip string) (github.CI, error)
 	PRFiles(ctx context.Context, repo string, number int) ([]github.PRFile, error)

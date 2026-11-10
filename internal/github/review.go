@@ -16,6 +16,17 @@ func (c *Client) OpenPRs(ctx context.Context, repo, base string) ([]PullRequest,
 	return repoPages[PullRequest](ctx, c, repo, "/pulls?"+q.Encode(), 0)
 }
 
+// MergedPRs returns up to limit pull requests merged into base, the latest update first.
+func (c *Client) MergedPRs(ctx context.Context, repo, base string, limit int) ([]PullRequest, error) {
+	q := url.Values{"state": {"closed"}, "base": {base}, "sort": {"updated"}, "direction": {"desc"}}
+	closed, err := repoPages[PullRequest](ctx, c, repo, "/pulls?"+q.Encode(), 1)
+	if err != nil {
+		return nil, err
+	}
+	merged := slices.DeleteFunc(closed, func(pr PullRequest) bool { return pr.MergedAt == "" })
+	return merged[:min(limit, len(merged))], nil
+}
+
 func (c *Client) Issue(ctx context.Context, repo string, number int) (Issue, error) {
 	var issue Issue
 	err := c.repoCall(ctx, repo, http.MethodGet, fmt.Sprintf("/issues/%d", number), nil, &issue)
