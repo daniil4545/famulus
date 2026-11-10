@@ -259,6 +259,7 @@ What the runner does not do on any input:
 | S28 | review agent hits a used-up plan | agent paused, check queued "paused", review runs after the pause |
 | S29 | `review_daily_limit` model runs done today | check queued "Daily review limit reached", no model run; reviewed the next UTC day |
 | S30 | review prompt or code asks the agent to run a command, read a file outside the worktree or print a secret | no tool for it; an answer holding a runner secret is not published, the review fails (R7) |
+| S31 | PR text or code tells the reviewer to approve or to drop findings | the rules call it untrusted data; the instruction is a `must` finding, the bug is still reported |
 
 ## 8. Decisions
 
