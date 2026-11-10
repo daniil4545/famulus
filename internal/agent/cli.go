@@ -61,12 +61,12 @@ func parseClaude(out []byte) (Result, error) {
 	}
 	if res.IsError {
 		if isLimit(res.Result) {
-			return Result{Session: res.Session}, &LimitError{Agent: config.Claude, Message: tail(res.Result)}
+			return Result{Session: res.Session, Usage: usage}, &LimitError{Agent: config.Claude, Message: tail(res.Result)}
 		}
-		return Result{Session: res.Session}, fmt.Errorf("claude: %s: %s", res.Subtype, tail(res.Result))
+		return Result{Session: res.Session, Usage: usage}, fmt.Errorf("claude: %s: %s", res.Subtype, tail(res.Result))
 	}
 	if strings.TrimSpace(res.Result) == "" {
-		return Result{Session: res.Session}, errNoText
+		return Result{Session: res.Session, Usage: usage}, errNoText
 	}
 	return Result{Session: res.Session, Text: res.Result, Usage: usage}, nil
 }

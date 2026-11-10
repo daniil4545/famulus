@@ -137,7 +137,10 @@ func (y *Yard) PreviewReview(ctx context.Context, repo config.Repo, number int) 
 	}
 	defer y.dropReview(ctx, repo, number)
 	ans, usage, err := y.askReviewer(ctx, dir, prompt)
-	return Preview{SHA: pr.Head.SHA, answer: ans, Usage: usage}, err
+	if err != nil {
+		return Preview{}, fmt.Errorf("%w (spent %.4f USD in %d turns)", err, usage.CostUSD, usage.Turns)
+	}
+	return Preview{SHA: pr.Head.SHA, answer: ans, Usage: usage}, nil
 }
 
 func (y *Yard) publishOnce(ctx context.Context, repo config.Repo, pr github.PullRequest, ans answer, files []github.PRFile, key string) error {
