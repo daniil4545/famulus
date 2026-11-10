@@ -267,7 +267,10 @@ func (y *Yard) reviewPrompt(ctx context.Context, repo config.Repo, pr github.Pul
 	if err != nil {
 		return "", fmt.Errorf("merged pull requests: %w", err)
 	}
-	merged = slices.DeleteFunc(merged, func(m github.PullRequest) bool { return m.Number == pr.Number })
+	// R2: a title is its author's text, and the author can edit it after the merge
+	merged = slices.DeleteFunc(merged, func(m github.PullRequest) bool {
+		return m.Number == pr.Number || (m.User.Login != y.Config.Owner && m.User.Login != y.Bot)
+	})
 	b.WriteString("\n## Recently merged pull requests\n\n")
 	for _, m := range merged[:min(recentPRs, len(merged))] {
 		fmt.Fprintf(&b, "- #%d %s\n", m.Number, m.Title)

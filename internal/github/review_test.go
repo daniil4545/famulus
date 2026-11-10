@@ -272,7 +272,7 @@ func TestMergedPRs(t *testing.T) {
 			t.Errorf("request = %s", r.URL)
 		}
 		fmt.Fprint(w, `[{"number":5,"title":"e","merged_at":"2026-01-05T00:00:00Z"},{"number":4,"title":"closed","merged_at":null},
-			{"number":3,"title":"c","merged_at":"2026-01-03T00:00:00Z"},{"number":2,"title":"b","merged_at":"2026-01-02T00:00:00Z"}]`)
+			{"number":2,"title":"b","merged_at":"2026-01-02T00:00:00Z"},{"number":3,"title":"c","merged_at":"2026-01-03T00:00:00Z"}]`)
 	})
 	prs, err := c.MergedPRs(context.Background(), "o/r", "main", 2)
 	if err != nil || len(prs) != 2 || prs[0].Number != 5 || prs[1].Number != 3 {

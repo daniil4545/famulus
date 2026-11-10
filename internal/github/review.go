@@ -9,6 +9,7 @@ import (
 	"regexp"
 	"slices"
 	"strconv"
+	"strings"
 )
 
 func (c *Client) OpenPRs(ctx context.Context, repo, base string) ([]PullRequest, error) {
@@ -16,7 +17,8 @@ func (c *Client) OpenPRs(ctx context.Context, repo, base string) ([]PullRequest,
 	return repoPages[PullRequest](ctx, c, repo, "/pulls?"+q.Encode(), 0)
 }
 
-// MergedPRs returns up to limit pull requests merged into base, the latest update first.
+// MergedPRs returns up to limit pull requests merged into base, the latest merge first, out
+// of the 100 most recently updated closed ones.
 func (c *Client) MergedPRs(ctx context.Context, repo, base string, limit int) ([]PullRequest, error) {
 	q := url.Values{"state": {"closed"}, "base": {base}, "sort": {"updated"}, "direction": {"desc"}}
 	closed, err := repoPages[PullRequest](ctx, c, repo, "/pulls?"+q.Encode(), 1)
@@ -24,6 +26,8 @@ func (c *Client) MergedPRs(ctx context.Context, repo, base string, limit int) ([
 		return nil, err
 	}
 	merged := slices.DeleteFunc(closed, func(pr PullRequest) bool { return pr.MergedAt == "" })
+	// RFC 3339 UTC timestamps sort as text
+	slices.SortStableFunc(merged, func(a, b PullRequest) int { return strings.Compare(b.MergedAt, a.MergedAt) })
 	return merged[:min(limit, len(merged))], nil
 }
 
