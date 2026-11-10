@@ -113,6 +113,7 @@ type fakeGitHub struct {
 	notes    map[int][]github.Note
 	comments map[int][]string
 	prs      map[int]github.PullRequest
+	merged   []github.PullRequest
 	created  []string
 	// pull request review
 	open    []github.PullRequest
@@ -189,6 +190,10 @@ func (f *fakeGitHub) CreateIssue(context.Context, string, string, string, []stri
 
 func (f *fakeGitHub) CloseIssue(context.Context, string, int) error {
 	return errors.New("unexpected alert closure")
+}
+
+func (f *fakeGitHub) MergedPRs(context.Context, string, string, int) ([]github.PullRequest, error) {
+	return f.merged, nil
 }
 
 func (f *fakeGitHub) OpenPRs(context.Context, string, string) ([]github.PullRequest, error) {

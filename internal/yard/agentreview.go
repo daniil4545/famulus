@@ -18,6 +18,9 @@ import (
 	agentrules "github.com/daniil4545/famulus/rules"
 )
 
+// recentPRs is how many merged PR titles show the reviewer where the project is going.
+const recentPRs = 15
+
 const retryPrompt = "Your last message was not a valid answer (%s). Reply with the JSON object only, as the rules say."
 
 type answer struct {
@@ -259,6 +262,18 @@ func (y *Yard) reviewPrompt(ctx context.Context, repo config.Repo, pr github.Pul
 		if issue.User.Login == y.Config.Owner {
 			fmt.Fprintf(&b, "\n## Issue #%d: %s\n\n%s\n", n, issue.Title, issue.Body)
 		}
+	}
+	merged, err := y.GitHub.MergedPRs(ctx, repo.Name, repo.Base, recentPRs+1)
+	if err != nil {
+		return "", fmt.Errorf("merged pull requests: %w", err)
+	}
+	// R2: a title is its author's text, and the author can edit it after the merge
+	merged = slices.DeleteFunc(merged, func(m github.PullRequest) bool {
+		return m.Number == pr.Number || (m.User.Login != y.Config.Owner && m.User.Login != y.Bot)
+	})
+	b.WriteString("\n## Recently merged pull requests\n\n")
+	for _, m := range merged[:min(recentPRs, len(merged))] {
+		fmt.Fprintf(&b, "- #%d %s\n", m.Number, m.Title)
 	}
 	b.WriteString("\n## Changed files\n\n")
 	for _, f := range files {
