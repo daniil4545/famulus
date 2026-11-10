@@ -87,5 +87,6 @@ Everything else is in `famulus.toml`, see `famulus.example.toml`.
 | model, states, scenarios, decisions | `docs/spec.md` |
 | rules every agent run starts with | `rules/AGENTS.md` |
 | review checklist and answer format | `rules/REVIEW.md` |
+| owner's design rules in every review | `rules/PRINCIPLES.md` |
 | rules for agents developing famulus | `AGENTS.md` |
 | what changed | `git log` |
