@@ -13,6 +13,8 @@ services:
     environment:
       FAMULUS_APP_ID: ${FAMULUS_APP_ID:?set through envkey}
       FAMULUS_APP_KEY_B64: ${FAMULUS_APP_KEY_B64:?set through envkey}
+      # Optional: the bot token for outage messages to telegram_chat.
+      FAMULUS_TELEGRAM_TOKEN: ${FAMULUS_TELEGRAM_TOKEN:-}
       # Optional logins; empty means that agent is not used.
       CLAUDE_CODE_OAUTH_TOKEN: ${CLAUDE_CODE_OAUTH_TOKEN:-}
     ports:

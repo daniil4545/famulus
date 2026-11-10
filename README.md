@@ -78,6 +78,7 @@ Tests and linters: `make check` (needs Go, git and golangci-lint).
 | `FAMULUS_APP_ID` | yes | GitHub App id |
 | `FAMULUS_APP_KEY_B64` | yes | base64 of the App private key PEM |
 | `CLAUDE_CODE_OAUTH_TOKEN` | for Claude | subscription token from `claude setup-token` |
+| `FAMULUS_TELEGRAM_TOKEN` | no | Telegram bot token; with `telegram_chat` in the config an outage and its end go to that chat |
 
 Everything else is in `famulus.toml`, see `famulus.example.toml`.
 

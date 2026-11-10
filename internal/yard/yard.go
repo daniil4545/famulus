@@ -70,6 +70,8 @@ type Yard struct {
 	Bot string
 	// Clock replaces time.Now in tests.
 	Clock func() time.Time
+	// Notify, when set, sends the owner a short text outside GitHub: an outage and its end.
+	Notify func(ctx context.Context, text string) error
 	// Passed, when set, hears the end of every pass.
 	Passed func(time.Time, int, error)
 	alert  alert

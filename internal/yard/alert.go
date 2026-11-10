@@ -18,7 +18,9 @@ type alert struct {
 	failures                   int
 	pending                    bool
 	reported                   bool
-	last                       error
+	// told is set once the outage went to Notify, until the recovery went there too.
+	told bool
+	last error
 }
 
 func (a *alert) failed(at time.Time, last error) {
@@ -29,15 +31,22 @@ func (a *alert) failed(at time.Time, last error) {
 	a.last = last
 }
 
+// clear ends the outage; a recovery message that did not get through keeps its outage start
+// and is sent on a later pass.
+func (a *alert) clear(at time.Time) {
+	*a = alert{lastGood: at, told: a.told, down: a.down}
+}
+
 func (y *Yard) reportAlert(ctx context.Context, at time.Time, errs int, last error) error {
 	a := &y.alert
 	if errs > 0 {
 		a.failed(at, last)
 	}
 	a.pending = a.pending || a.failures >= 3 || (a.failures > 0 && at.Sub(a.lastGood) >= 5*time.Minute)
+	y.notifyOutage(ctx, at, errs)
 	if y.Config.AlertRepo == "" {
 		if errs == 0 {
-			*a = alert{lastGood: at}
+			a.clear(at)
 		}
 		return nil
 	}
@@ -61,9 +70,33 @@ func (y *Yard) reportAlert(ctx context.Context, at time.Time, errs int, last err
 		}
 	}
 	if errs == 0 {
-		*a = alert{lastGood: at}
+		a.clear(at)
 	}
 	return nil
+}
+
+// notifyOutage tells the owner about an outage and its end over Notify, a channel that does
+// not need the GitHub App: a broken App key fails the alert issue too. A failed send is
+// tried again on the next pass.
+func (y *Yard) notifyOutage(ctx context.Context, at time.Time, errs int) {
+	a := &y.alert
+	if y.Notify == nil {
+		return
+	}
+	var text string
+	switch {
+	case errs > 0 && a.pending && !a.told:
+		text = fmt.Sprintf("famulus is failing since %s. Last error: %s.", a.down.UTC().Format(time.RFC3339), alertCause(a.last))
+	case errs == 0 && a.told:
+		text = fmt.Sprintf("famulus recovered, down from %s to %s.", a.down.UTC().Format(time.RFC3339), at.UTC().Format(time.RFC3339))
+	default:
+		return
+	}
+	if err := y.Notify(ctx, text); err != nil {
+		y.Log.Warn("notify failed", "err", err)
+		return
+	}
+	a.told = errs > 0
 }
 
 func (y *Yard) syncAlert(ctx context.Context, i github.Issue, at time.Time, errs int) error {

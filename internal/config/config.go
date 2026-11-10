@@ -34,10 +34,12 @@ type Config struct {
 	ReviewDailyLimit int    `toml:"review_daily_limit"`
 	WorkDir          string `toml:"work_dir"`
 	// Panel is the listen address of the admin page; empty turns it off.
-	Panel     string            `toml:"panel"`
-	AlertRepo string            `toml:"alert_repo"`
-	Agent     string            `toml:"agent"`
-	Models    map[string]string `toml:"models"`
+	Panel     string `toml:"panel"`
+	AlertRepo string `toml:"alert_repo"`
+	// TelegramChat is the chat that hears about an outage; it needs FAMULUS_TELEGRAM_TOKEN.
+	TelegramChat string            `toml:"telegram_chat"`
+	Agent        string            `toml:"agent"`
+	Models       map[string]string `toml:"models"`
 	// Effort is the reasoning effort per agent; only the claude CLI takes it as a flag.
 	Effort map[string]string `toml:"effort"`
 	// GateFiles are the paths of the CI gate itself; the guard never approves a PR changing
