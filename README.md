@@ -18,7 +18,8 @@ Set `review = true` on a repository in `famulus.toml`. The check `famulus` on a 
 |---|---|---|
 | Waiting for CI | CI of the head runs | none |
 | Waiting for green CI / `main` is red | CI of the head or of the base failed | fix CI |
-| Gate files changed without the label | the PR changes workflows, linter configs or `Makefile` | add the label `gate-change` and push |
+| CI did not run | no CI check started on the commit in two hours | rerun CI or push a new commit |
+| Gate files changed | the PR changes workflows, linter configs or `Makefile` | read it and merge it by hand |
 | Approved / Changes requested | the agent review; findings are line comments | fix the `must` findings |
 | Agent review paused | the Claude plan is used up | none, it resumes itself |
 | Review failed / Publishing the review failed | a bad answer twice, or GitHub refused the review | push a new commit to retry |
