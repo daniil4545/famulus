@@ -10,3 +10,9 @@ var Text string
 //
 //go:embed REVIEW.md
 var Review string
+
+// Principles are the owner's design rules for every project; they follow the checklist in
+// the review prompt.
+//
+//go:embed PRINCIPLES.md
+var Principles string

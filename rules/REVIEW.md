@@ -20,11 +20,13 @@ change files: whatever you leave here is thrown away.
 5. Docs. README, docs and comments that the change made wrong.
 6. Project rules. Read `CONTRIBUTING.md`, `AGENTS.md`, `CLAUDE.md` and
    `.github/pull_request_template.md` when present; a broken rule is a finding.
+7. Owner's principles. `P1`-`P6` after these rules hold in every project of the owner. A
+   broken principle is a finding; start its `why` with the rule, like `P4:`.
 
 ## Severity
 
 - `must`: the PR does something wrong or harmful once merged: a bug a user hits, lost data,
-  a security hole, the issue not done, a broken project rule. Name the failure scenario.
+  a security hole, the issue not done, a broken project rule or principle. Name the failure scenario.
 - `should`: worth fixing but safe to merge: unclear names, a missing edge test, stale docs.
 
 Style that a linter could catch is not a finding. Do not report a guess you could not
