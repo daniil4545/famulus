@@ -231,3 +231,22 @@ func readAt(t *testing.T, dir, name string) []byte {
 	}
 	return raw
 }
+
+// The usage of a claude run comes from a live `claude -p --output-format json` result.
+func TestParseClaudeUsage(t *testing.T) {
+	raw, err := os.ReadFile(filepath.Join("testdata", "claude-ok.json"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	res, err := parseClaude(raw)
+	if err != nil {
+		t.Fatal(err)
+	}
+	want := Usage{CostUSD: 0.00155579, Input: 2, Output: 101, CacheRead: 649, CacheWrite: 7493, Turns: 1}
+	if res.Usage != want || res.Text != "ok" {
+		t.Fatalf("got %+v, want usage %+v", res, want)
+	}
+	if sum := want.Add(want); sum.Turns != 2 || sum.CacheWrite != 14986 {
+		t.Fatalf("sum = %+v", sum)
+	}
+}

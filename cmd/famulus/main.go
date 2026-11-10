@@ -4,6 +4,7 @@ package main
 
 import (
 	"context"
+	"encoding/json"
 	"errors"
 	"flag"
 	"fmt"
@@ -13,6 +14,9 @@ import (
 	"os"
 	"os/signal"
 	"path/filepath"
+	"slices"
+	"strconv"
+	"strings"
 	"syscall"
 	"time"
 
@@ -35,13 +39,19 @@ func main() {
 func run() error {
 	configPath := flag.String("config", "famulus.toml", "path to the config file")
 	once := flag.Bool("once", false, "make one pass and exit")
+	preview := flag.String("review", "", "review one pull request `owner/repo#N`, print the answer as JSON and publish nothing")
 	flag.Parse()
 	if err := hideProc(); err != nil {
 		return err
 	}
 
 	recent := panel.NewLog(300)
-	log := slog.New(slog.NewTextHandler(io.MultiWriter(os.Stdout, recent), nil))
+	logOut := io.Writer(os.Stdout)
+	if *preview != "" {
+		// stdout carries the answer alone
+		logOut = os.Stderr
+	}
+	log := slog.New(slog.NewTextHandler(io.MultiWriter(logOut, recent), nil))
 	cfg, err := config.Load(*configPath)
 	if err != nil {
 		return fmt.Errorf("config: %w", err)
@@ -79,6 +89,9 @@ func run() error {
 		Passed: health.Passed,
 		Bot:    name,
 	}
+	if *preview != "" {
+		return previewReview(ctx, y, *preview)
+	}
 	log.Info("famulus started", "bot", name, "owner", cfg.Owner, "repos", len(cfg.Repos), "interval", cfg.Interval)
 	if *once {
 		y.Pass(ctx)
@@ -100,5 +113,25 @@ func run() error {
 		log.Info("panel listening", "addr", cfg.Panel)
 	}
 	y.Run(ctx)
+	return nil
+}
+
+// previewReview prints the guard's answer on one PR of a configured repository.
+func previewReview(ctx context.Context, y *yard.Yard, target string) error {
+	name, num, _ := strings.Cut(target, "#")
+	number, err := strconv.Atoi(num)
+	i := slices.IndexFunc(y.Config.Repos, func(r config.Repo) bool { return r.Name == name })
+	if err != nil || i < 0 {
+		return fmt.Errorf("-review %q: want owner/repo#N with a repository from the config", target)
+	}
+	out, err := y.PreviewReview(ctx, y.Config.Repos[i], number)
+	if err != nil {
+		return fmt.Errorf("review %s: %w", target, err)
+	}
+	enc := json.NewEncoder(os.Stdout)
+	enc.SetIndent("", "  ")
+	if err := enc.Encode(out); err != nil {
+		return fmt.Errorf("print the answer: %w", err)
+	}
 	return nil
 }

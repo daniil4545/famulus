@@ -295,6 +295,8 @@ type fakeAgents struct {
 	calls []call
 	// next decides what one run does: commits to add, final text, error
 	next func(req agent.Request) (int, string, error)
+	// usage is what every run reports
+	usage agent.Usage
 }
 
 func (a *fakeAgents) Run(_ context.Context, name string, req agent.Request) (agent.Result, error) {
@@ -304,7 +306,7 @@ func (a *fakeAgents) Run(_ context.Context, name string, req agent.Request) (age
 	if err != nil {
 		return agent.Result{}, err
 	}
-	return agent.Result{Session: "ses-1", Text: text}, nil
+	return agent.Result{Session: "ses-1", Text: text, Usage: a.usage}, nil
 }
 
 func newYard(t *testing.T, gh *fakeGitHub) (*Yard, *fakeWork, *fakeAgents) {
