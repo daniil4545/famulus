@@ -92,6 +92,8 @@ func repoPages[T any](ctx context.Context, c *Client, repo, path string, maxPage
 type CI struct {
 	State  string
 	Failed []string
+	// None is set when the SHA has no check run and no status at all.
+	None bool
 }
 
 type checkRun struct {
@@ -181,6 +183,7 @@ func (c *Client) CISummary(ctx context.Context, repo, sha, skip string) (CI, err
 		ci.State = "failure"
 	} else if pending || count == 0 {
 		ci.State = "pending"
+		ci.None = count == 0
 	}
 	return ci, nil
 }

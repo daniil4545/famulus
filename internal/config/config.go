@@ -40,17 +40,19 @@ type Config struct {
 	Models    map[string]string `toml:"models"`
 	// Effort is the reasoning effort per agent; only the claude CLI takes it as a flag.
 	Effort map[string]string `toml:"effort"`
-	// GateFiles are the paths of the CI gate itself; a PR changing one needs the owner's label
-	// gate-change, since a PR runs its own workflow and could weaken it.
+	// GateFiles are the paths of the CI gate itself; the guard never approves a PR changing
+	// one, since a PR runs its own workflow and could weaken it.
 	GateFiles []string `toml:"gate_files"`
-	Repos     []Repo   `toml:"repos"`
+	// ReviewCITimeout is how long the guard waits for CI of a head SHA to start.
+	ReviewCITimeout time.Duration `toml:"review_ci_timeout"`
+	Repos           []Repo        `toml:"repos"`
 }
 
 type Repo struct {
 	Name  string `toml:"name"`
 	Base  string `toml:"base"`
 	Agent string `toml:"agent"`
-	// Review makes the runner guard the owner's pull requests into Base.
+	// Review makes the runner guard the pull requests into Base.
 	Review bool `toml:"review"`
 }
 
@@ -62,6 +64,7 @@ func Load(path string) (Config, error) {
 		LimitPause:       time.Hour,
 		DailyLimit:       5,
 		ReviewDailyLimit: 20,
+		ReviewCITimeout:  2 * time.Hour,
 		WorkDir:          "/work",
 		Panel:            ":8080",
 		Agent:            OpenCode,

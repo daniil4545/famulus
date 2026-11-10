@@ -14,19 +14,20 @@ import (
 
 const (
 	checkName  = "famulus"
-	gateLabel  = "gate-change"
 	reviewNext = "Code checks passed; the agent review comes next"
+	ciWaiting  = "Waiting for CI"
+	ciMissing  = "CI did not run"
 )
 
-// reviewRepo guards the owner's open pull requests: the code decides what it can, the agent
-// review comes after. Nobody else's PR is read (R2).
+// reviewRepo guards the open pull requests of any author: the code decides what it can, the
+// agent review comes after. Drafts wait.
 func (y *Yard) reviewRepo(ctx context.Context, repo config.Repo, result *passResult) error {
 	prs, err := y.GitHub.OpenPRs(ctx, repo.Name, repo.Base)
 	if err != nil {
 		return fmt.Errorf("list pull requests: %w", err)
 	}
 	for _, pr := range prs {
-		if pr.Draft || pr.User.Login != y.Config.Owner {
+		if pr.Draft {
 			continue
 		}
 		rec := y.State.Reviews[state.Key(repo.Name, pr.Number)]
@@ -52,7 +53,13 @@ func (y *Yard) reviewPR(ctx context.Context, repo config.Repo, pr github.PullReq
 	// required check once the owner requires it.
 	switch ci.State {
 	case "pending":
-		return y.setCheck(ctx, repo, pr, github.Check{Status: "in_progress", Title: "Waiting for CI", Summary: "The review starts when CI is green."})
+		if ci.None && y.ciOverdue(repo, pr) {
+			return y.setCheck(ctx, repo, pr, github.Check{
+				Status: "completed", Conclusion: "failure", Title: ciMissing,
+				Summary: fmt.Sprintf("No CI check started on this commit within %s. Rerun CI or push a new commit.", y.Config.ReviewCITimeout),
+			})
+		}
+		return y.setCheck(ctx, repo, pr, github.Check{Status: "in_progress", Title: ciWaiting, Summary: "The review starts when CI is green."})
 	case "failure":
 		return y.setCheck(ctx, repo, pr, github.Check{
 			Status: "in_progress", Title: "Waiting for green CI",
@@ -73,15 +80,27 @@ func (y *Yard) reviewPR(ctx context.Context, repo config.Repo, pr github.PullReq
 	if err != nil {
 		return fmt.Errorf("pr files: %w", err)
 	}
-	if gate := gateFiles(files, y.Config.GateFiles); len(gate) > 0 && !hasLabel(pr.Labels, gateLabel) {
-		body := fmt.Sprintf("This PR changes files of the CI gate: %s. A PR runs its own workflow, so such a change needs the owner's label `%s`.",
-			strings.Join(gate, ", "), gateLabel)
-		return y.verdict(ctx, repo, pr, "REQUEST_CHANGES", body, "Gate files changed without the label", nil)
+	if gate := gateFiles(files, y.Config.GateFiles); len(gate) > 0 {
+		body := fmt.Sprintf("This PR changes files of the CI gate: %s. A PR runs its own workflow, so famulus never approves such a change: the owner reads it and merges it by hand.",
+			strings.Join(gate, ", "))
+		return y.verdict(ctx, repo, pr, "REQUEST_CHANGES", body, "Gate files changed", nil)
 	}
-	if err := y.setCheck(ctx, repo, pr, github.Check{Status: "queued", Title: reviewNext, Summary: "CI and " + repo.Base + " are green; gate files untouched or labeled."}); err != nil {
+	if err := y.setCheck(ctx, repo, pr, github.Check{Status: "queued", Title: reviewNext, Summary: "CI and " + repo.Base + " are green; gate files untouched."}); err != nil {
 		return err
 	}
 	return y.agentReview(ctx, repo, pr, files)
+}
+
+// ciOverdue tells whether the head SHA has waited for its CI to start longer than the
+// timeout. The record's time is when the waiting check was set; once overdue it stays so
+// until a check run appears.
+func (y *Yard) ciOverdue(repo config.Repo, pr github.PullRequest) bool {
+	rec := y.State.Reviews[state.Key(repo.Name, pr.Number)]
+	if rec == nil || rec.SHA != pr.Head.SHA {
+		return false
+	}
+	waited := strings.Contains(rec.Check, ": "+ciWaiting+"\n") && y.now().Sub(rec.At) >= y.Config.ReviewCITimeout
+	return waited || strings.Contains(rec.Check, ": "+ciMissing+"\n")
 }
 
 // verdict publishes one review on the head SHA once: a review the bot already left on that
@@ -160,10 +179,6 @@ func gateFile(name string, patterns []string) bool {
 		}
 	}
 	return false
-}
-
-func hasLabel(labels []github.Label, name string) bool {
-	return slices.ContainsFunc(labels, func(l github.Label) bool { return l.Name == name })
 }
 
 func (y *Yard) recordVerdict(repo config.Repo, pr github.PullRequest, verdict string) {

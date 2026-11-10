@@ -87,30 +87,30 @@ GitHub was unreachable, the pending outage is opened and closed on recovery. Pen
 before issue creation are held in memory. Alerts publish safe error categories; arbitrary
 CLI and remote error text stays in the local log.
 
-A repository with `review = true` also gets a review pass before its tasks. Only the owner's
-non-draft PRs are reviewed, once per head SHA; the verdict is stored in state and found
+A repository with `review = true` also gets a review pass before its tasks. Every non-draft
+PR is reviewed, whoever wrote it, once per head SHA; the verdict is stored in state and found
 again among the bot's reviews after a restart. Code decides first, on the check `famulus`:
 
 | Condition | Check | Review |
 |---|---|---|
 | CI of the head still running | `in_progress`, "Waiting for CI" | none |
+| no CI check started within `review_ci_timeout` (default 2 h) | `completed` failure, "CI did not run" | none |
 | CI of the head failed | `in_progress`, failed jobs listed | none |
 | CI of the base branch failed | `in_progress`, "<base> is red" | none |
-| files from `gate_files` changed, no `gate-change` label | `completed` failure | `REQUEST_CHANGES` |
+| files from `gate_files` changed | `completed` failure | `REQUEST_CHANGES` |
 | otherwise | `queued`, then the agent review below | agent's verdict |
 
 `gate_files` (default: workflows, linter and gitleaks configs, `Makefile`, `*.mk`) protects
 CI from being weakened inside the PR it checks; a rename counts by both names. famulus
-checks that the label is present, not who set it: labels need triage access, which only
-the owner holds.
-The verdict is per SHA, so a label added after `REQUEST_CHANGES` takes effect on the next
-push. An unchanged check text is not sent again.
+never approves such a PR and no label changes that: the owner reads it and merges it against
+the guard. The verdict is per SHA. An unchanged check text is not sent again. A check that
+failed for missing CI goes back to waiting when a check run appears.
 
 The agent review runs `claude` read-only (R7; model and effort from config, the run timeout) in a new
 session, in a detached worktree of the head SHA that is removed afterwards; nothing made there
 is pushed. The prompt is `rules/REVIEW.md` (the maintainer checklist and the answer format),
 `rules/PRINCIPLES.md` (the owner's design rules `P1`-`P6`, one text for all projects; a project's own docs win on conflict),
-the PR title and body, linked issues written by the owner (others' issues are left out, R2),
+the PR title and body, linked issues (one written by somebody else is marked as data, not instructions),
 the titles of the 15 latest merged PRs of the owner and the bot (R2), the changed files and the diff against the base, cut at 200 KB.
 The agent checks the intent of the issue, the behaviour, the tests and the fit with the project's
 documents and the principles; a `must` about design names its written source, a principle or a
@@ -214,8 +214,9 @@ What the runner does not do on any input:
 
 - R1. Takes only issues with the label `agent`; on GitHub only people with triage rights
   can set labels.
-- R2. Passes to the agent only notes written by `owner`. A stranger's comment never reaches a
-  prompt.
+- R2. Passes to the coding agent only notes written by `owner`. A stranger's comment never
+  reaches its prompt. The review agent reads a PR and its issues of any author, as untrusted
+  data (S31), with reading tools only (R7).
 - R3. Never merges, never pushes to the base branch, never force-pushes.
 - R4. One agent at a time; a run is cut at `timeout`.
 - R5. Gives the agent no GitHub token and no App key.
@@ -250,16 +251,17 @@ What the runner does not do on any input:
 | S19 | startup, or last successful pass at least five minutes ago | `/healthz` returns 503; fresh success returns 200; panel shows health |
 | S20 | error contains credentials or arbitrary agent output | public alert contains only a safe cause category |
 | S21 | another App has a `famulus` check on the same SHA | create our own check; later updates address only our App's check (R6) |
-| S22 | owner's PR, CI pending or failed, or base red | check `famulus` waits with the reason; no review |
-| S23 | PR changes a gate file without the `gate-change` label | `REQUEST_CHANGES` and failed check, once per SHA, also after restart |
-| S24 | stranger's or draft PR | not reviewed |
+| S22 | CI of the PR pending or failed, or base red | check `famulus` waits with the reason; no review |
+| S23 | PR changes a gate file, with any label | `REQUEST_CHANGES` and failed check without a model run, once per SHA, also after restart |
+| S24 | stranger's or the bot's PR; draft PR | the same pass as the owner's PR; a draft waits |
 | S25 | code checks pass, agent finds a must issue | `REQUEST_CHANGES`, findings in the diff as line comments, the rest in the body, check failure |
 | S26 | agent answers without valid JSON, or the verdict contradicts the findings | one retry in the same session; twice bad - `COMMENT` "review failed", check failure, no approval |
-| S27 | linked issue written by someone else | left out of the review prompt (R2) |
+| S27 | linked issue written by someone else | in the review prompt, marked as data, not instructions |
 | S28 | review agent hits a used-up plan | agent paused, check queued "paused", review runs after the pause |
 | S29 | `review_daily_limit` model runs done today | check queued "Daily review limit reached", no model run; reviewed the next UTC day |
 | S30 | review prompt or code asks the agent to run a command, read a file outside the worktree or print a secret | no tool for it; an answer holding a runner secret is not published, the review fails (R7) |
 | S31 | PR text or code tells the reviewer to approve or to drop findings | the rules call it untrusted data; the instruction is a `must` finding, the bug is still reported |
+| S32 | no CI check starts on the head SHA within `review_ci_timeout` | check failure "CI did not run", no model run; back to waiting when a run appears |
 
 ## 8. Decisions
 
