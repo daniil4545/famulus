@@ -25,6 +25,9 @@ Set `review = true` on a repository in `famulus.toml`. The check `famulus` on a 
 | Review failed / Publishing the review failed | a bad answer twice, or GitHub refused the review | push a new commit to retry |
 | Daily review limit reached | `review_daily_limit` model runs done today | none, it runs the next UTC day |
 
+With GitHub auto-merge on and `famulus` a required check next to CI, a PR merges by itself once CI
+is green and the review approves it. famulus still never merges: GitHub does.
+
 ## Coding runner (frozen)
 
 1. You open an issue and add the label `agent` (or `agent:claude`, `agent:codex` next to it).
