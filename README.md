@@ -72,7 +72,7 @@ Optional logins:
   the `home` volume.
 - OpenCode free models need no login.
 
-Tests and linters: `make check` (needs Go, git and golangci-lint).
+Checks: `make lint`. Lint, tests and the rest: `make check` (needs Go, git and golangci-lint).
 
 ## Configuration
 

@@ -1,4 +1,4 @@
-.PHONY: build test test-race fmt fmt-check vet lint secrets vuln commit-check check ci-check image up
+.PHONY: build test test-race fmt fmt-check vet lint secrets vuln check ci-check image up
 
 GITLEAKS := go run github.com/zricethezav/gitleaks/v8@v8.30.1
 GOVULNCHECK := go run golang.org/x/vuln/cmd/govulncheck@v1.9.0
@@ -32,8 +32,9 @@ fmt-check:
 vet:
 	go vet ./...
 
-# Both targets on any machine: a Mac alone never compiles the _linux.go files the container runs.
-lint:
+# All static checks: format, vet, linters. Both GOOS on any machine: a Mac alone never compiles the
+# _linux.go files the container runs.
+lint: fmt-check vet
 	GOOS=linux golangci-lint run --timeout 120s
 	GOOS=darwin golangci-lint run --timeout 120s
 
@@ -46,12 +47,10 @@ secrets:
 	mkdir "$$tmp/tree"; git archive "$$tree" | tar -x -C "$$tmp/tree"; \
 	cd "$$tmp/tree" && $(GITLEAKS) dir --no-banner --redact .
 
-commit-check: fmt-check vet lint
-
-check: commit-check secrets test build
+check: lint secrets test build
 
 # A PR into main and a push to main: everything above, races and known vulnerabilities.
-ci-check: commit-check secrets test-race vuln build
+ci-check: lint secrets test-race vuln build
 
 image:
 	docker compose build

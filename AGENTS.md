@@ -39,6 +39,6 @@ an interface; nothing imports `yard` but `cmd`.
 
 ## Commands
 
-- `make check`: format, vet, golangci-lint, gitleaks, tests, build.
-- `make commit-check`: static checks only.
+- `make lint`: all static checks (format, vet, golangci-lint).
+- `make check`: lint, gitleaks, tests, build.
 - `envkey run -- docker compose up -d --build`: run the container.
