@@ -26,7 +26,7 @@ Set `review = true` on a repository in `famulus.toml`. The check `famulus` on a 
 | Daily review limit reached | `review_daily_limit` model runs done today | none, it runs the next UTC day |
 
 With GitHub auto-merge on and `famulus` a required check next to CI, a PR merges by itself once CI
-is green and the review approves it. famulus still never merges: GitHub does.
+and the `famulus` check are green. famulus still never merges: GitHub does.
 
 ## Coding runner (frozen)
 
