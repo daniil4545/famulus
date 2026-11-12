@@ -27,7 +27,9 @@ jobs:
           version: v2.15.0
           # make runs the linter itself; the action only installs it.
           install-only: true
-      - run: make ci-check
+      - run: make lint
+      # lint ran above; ci-check would run it again.
+      - run: make secrets test-race vuln build
 
   # famulus runs only as this image: a broken Dockerfile breaks the runner, not the tests.
   image:
